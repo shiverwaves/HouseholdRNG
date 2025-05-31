@@ -1,0 +1,164 @@
+name: OEWS State Data Import
+
+on:
+  # Run monthly on the 15th at 2 AM UTC
+  schedule:
+    - cron: '0 2 15 * *'
+  
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      force_download:
+        description: 'Force download and import even if data exists'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  import-state-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60  # Reduced from 120 - state data is much faster
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Create environment file
+      run: |
+        echo "NEON_CONNECTION_STRING=${{ secrets.NEON_CONNECTION_STRING }}" > .env
+        
+    - name: Verify database connection
+      run: |
+        python -c "
+        import os, psycopg2
+        from dotenv import load_dotenv
+        load_dotenv()
+        conn = psycopg2.connect(os.getenv('NEON_CONNECTION_STRING'))
+        print('✅ Database connection successful')
+        conn.close()
+        "
+        
+    - name: Check if state data exists
+      id: check_data
+      run: |
+        python -c "
+        import os, psycopg2
+        from dotenv import load_dotenv
+        load_dotenv()
+        
+        try:
+            conn = psycopg2.connect(os.getenv('NEON_CONNECTION_STRING'))
+            with conn.cursor() as cur:
+                # Check if table exists and has state data
+                cur.execute('''
+                    SELECT COUNT(*) FROM information_schema.tables 
+                    WHERE table_schema = 'oews' AND table_name = 'employment_wages'
+                ''')
+                table_exists = cur.fetchone()[0] > 0
+                
+                if table_exists:
+                    cur.execute('''
+                        SELECT COUNT(*), COUNT(DISTINCT area_title) 
+                        FROM oews.employment_wages 
+                    ''')
+                    count, states = cur.fetchone()
+                    
+                    if count and count > 30000 and states and states >= 50:  # Substantial state data
+                        print(f'Found {count:,} records across {states} states')
+                        print('has_data=true')
+                    else:
+                        print(f'Insufficient data: {count} records, {states} states')
+                        print('has_data=false')
+                else:
+                    print('Table does not exist')
+                    print('has_data=false')
+            
+            conn.close()
+            
+        except Exception as e:
+            print(f'Database check failed: {e}')
+            print('has_data=false')
+        " > check_result.txt
+        
+        if grep -q "has_data=true" check_result.txt; then
+          echo "has_data=true" >> $GITHUB_OUTPUT
+        else
+          echo "has_data=false" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Skip if data exists (unless forced)
+      if: steps.check_data.outputs.has_data == 'true' && github.event.inputs.force_download != 'true'
+      run: |
+        echo "⏭️ OEWS state data already exists in database"
+        echo "Found substantial data across 50+ states. Skipping download."
+        echo "To force re-download, use manual trigger with force_download=true"
+        
+    - name: Download and import state data
+      if: steps.check_data.outputs.has_data != 'true' || github.event.inputs.force_download == 'true'
+      run: |
+        echo "🚀 Starting OEWS state data download and import..."
+        python get_emp_wages_data.py
+        
+    - name: Verify import success
+      if: steps.check_data.outputs.has_data != 'true' || github.event.inputs.force_download == 'true'
+      run: |
+        python -c "
+        import os, psycopg2
+        from dotenv import load_dotenv
+        load_dotenv()
+        
+        conn = psycopg2.connect(os.getenv('NEON_CONNECTION_STRING'))
+        with conn.cursor() as cur:
+            # Get summary statistics
+            cur.execute('''
+                SELECT 
+                    year,
+                    COUNT(*) as total_records,
+                    COUNT(DISTINCT area_title) as states,
+                    COUNT(DISTINCT occ_code) as occupations,
+                    COUNT(*) FILTER (WHERE a_median IS NOT NULL) as records_with_wages
+                FROM oews.employment_wages 
+                GROUP BY year
+            ''')
+            
+            result = cur.fetchone()
+            if result:
+                year, records, states, occs, wage_records = result
+                print('📊 STATE DATA IMPORT SUMMARY:')
+                print(f'{records:,} records | {states} states | {occs} occupations | {wage_records:,} with wages')
+                
+                # Validation
+                if records < 30000:
+                    raise Exception(f'Import verification failed: only {records:,} records found')
+                if states < 50:
+                    raise Exception(f'Import verification failed: only {states} states found')
+                    
+                print(f'✅ Import verification successful: {records:,} records across {states} states')
+            else:
+                raise Exception('No data found after import')
+        
+        conn.close()
+        "
+        
+    - name: Clean up
+      if: always()
+      run: rm -f .env
+        
+    - name: Upload logs on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: oews-state-import-logs
+        path: oews_download.log
+        retention-days: 7
