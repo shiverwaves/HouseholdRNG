@@ -19,6 +19,14 @@ import sys
 from typing import Dict, List, Any
 from datetime import datetime
 
+# Load environment variables from .env file if it exists
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # dotenv not available, use system environment variables only
+    pass
+
 class EnhancedCensusDataExtractor:
     """
     Extract state-level demographic data from US Census Bureau APIs
