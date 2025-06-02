@@ -132,7 +132,7 @@ jobs:
       if: steps.check_census_data.outputs.has_data != 'true' || github.event.inputs.force_download == 'true'
       run: |
         echo "🏛️ Starting Census demographic data import..."
-        get_fam_hh_data.py
+        python get_fam_hh_data.py
         
     - name: Verify census import success
       if: steps.check_census_data.outputs.has_data != 'true' || github.event.inputs.force_download == 'true'
