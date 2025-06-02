@@ -41,14 +41,14 @@ on:
     branches: [ main ]
     paths: 
       - 'tax_hh_gen.py'
-      - '.github/workflows/validate-tax_hh_gen.yml'
+      - '.github/workflows/validate-tax-household-generator.yml'
 
   # Auto-trigger on PRs (basic validation only)
   pull_request:
     branches: [ main ]
     paths:
       - 'tax_hh_gen.py'
-      - '.github/workflows/validate-tax_hh_gen.yml'
+      - '.github/workflows/validate-tax-household-generator.yml'
 
 jobs:
   validate-generator:
@@ -107,7 +107,7 @@ jobs:
         echo "📊 Parameters: Count=$COUNT, Year=$YEAR"
         echo "💾 JSON Artifact: $JSON_ARTIFACT"
     
-    - name: Test database connection (mock)
+    - name: Test database connection requirements
       run: |
         echo "🔌 Testing database connection requirements..."
         
@@ -115,18 +115,12 @@ jobs:
         python -c "
         import os
         
-        # Simulate database connection validation
-        connection_string = os.getenv('NEON_CONNECTION_STRING', 'mock://test')
-        
-        if connection_string.startswith('mock://'):
-            print('⚠️  Using mock database connection for testing')
-            print('✅ Database connection structure validation passed')
-        else:
-            print('✅ Real database connection string found')
-        
-        # Validate connection string format expectations
-        expected_parts = ['host', 'port', 'database', 'user', 'password']
-        print(f'📋 Expected connection components: {expected_parts}')
+        # Check for database connection requirements
+        print('📋 Database connection requirements:')
+        print('  - NEON_CONNECTION_STRING must be set as repository secret')
+        print('  - Connection string should include: host, port, database, user, password')
+        print('  - Script will validate actual connection when running')
+        print('✅ Database requirements validation completed')
         "
     
     - name: Run basic functionality test
@@ -159,150 +153,255 @@ jobs:
         "
     
     - name: Run scenario-specific validation
-      env:
-        NEON_CONNECTION_STRING: ${{ secrets.NEON_CONNECTION_STRING || 'mock://localhost:5432/testdb?user=test&password=test' }}
       run: |
         echo "🎯 Running scenario: ${{ steps.set_params.outputs.scenario }}"
         
         case "${{ steps.set_params.outputs.scenario }}" in
           "basic_validation")
-            echo "Running basic validation..."
-            python -c "
-        # Mock basic validation without real database
-        print('🏠 Simulating basic household generation...')
-        print('✅ Would generate ${{ steps.set_params.outputs.count }} households')
-        print('📅 Tax year: ${{ steps.set_params.outputs.year }}')
-        print('✅ Basic validation simulation completed')
-            "
+            echo "✅ Basic validation: Script syntax and structure validated"
             ;;
             
           "batch_validation")
-            echo "Running batch validation test..."
-            python -c "
-        print('📦 Batch validation test simulation')
-        count = int('${{ steps.set_params.outputs.count }}')
-        print(f'✅ Batch size validation: {count} households')
-        print('🔍 Testing household generation process...')
-        print('🔍 Testing member generation for each household...')
-        print('🔍 Testing income calculation for employed members...')
-        print('🔍 Testing tax filing status determination...')
-        print('✅ Batch validation simulation completed')
-            "
+            echo "✅ Batch validation: Ready to generate ${{ steps.set_params.outputs.count }} households"
             ;;
         esac
     
-    - name: Validate output structure
+    - name: Run Tax Household Generator
+      env:
+        NEON_CONNECTION_STRING: ${{ secrets.NEON_CONNECTION_STRING }}
       run: |
-        echo "🔍 Validating expected output structure..."
+        echo "🏠 RUNNING TAX HOUSEHOLD GENERATOR"
+        echo "================================="
         
-        python -c "
-        # Validate the expected household structure
-        expected_fields = [
-            'household_id',
-            'tax_year', 
-            'state_name',
-            'filing_status',
-            'total_household_income',
-            'number_of_dependents',
-            'members'
-        ]
+        if [ -z "$NEON_CONNECTION_STRING" ]; then
+          echo "❌ NEON_CONNECTION_STRING is required to run the generator"
+          echo "Please add your database connection string as a repository secret"
+          exit 1
+        fi
         
-        expected_member_fields = [
-            'role',
-            'age',
-            'gender',
-            'employment_status',
-            'is_dependent',
-            'annual_income'
-        ]
+        echo "🔌 Database connection detected"
+        echo "🏠 Running tax_hh_gen.py..."
         
-        print('📋 Expected household fields:', expected_fields)
-        print('👤 Expected member fields:', expected_member_fields)
-        print('✅ Output structure validation completed')
-        "
+        # Run the actual script
+        python tax_hh_gen.py \
+          --count ${{ steps.set_params.outputs.count }} \
+          --tax-year ${{ steps.set_params.outputs.year }} \
+          --export generated_households.json
+        
+        # Verify output file was created
+        if [ -f "generated_households.json" ]; then
+          echo "✅ Household generation completed successfully"
+          echo "📄 Output file size: $(stat -f%z generated_households.json 2>/dev/null || stat -c%s generated_households.json) bytes"
+        else
+          echo "❌ Failed to generate households - no output file created"
+          exit 1
+        fi
     
     - name: Generate JSON output artifact
       if: steps.set_params.outputs.json_artifact == 'true'
-      env:
-        NEON_CONNECTION_STRING: ${{ secrets.NEON_CONNECTION_STRING || 'mock://localhost:5432/testdb?user=test&password=test' }}
       run: |
-        echo "📄 Generating JSON output artifact..."
+        echo "📄 Preparing JSON artifact for download..."
         
-        # Create mock JSON output for testing
-        python -c "
+        if [ -f "generated_households.json" ]; then
+          # Copy the generated file for artifact upload
+          cp generated_households.json validation_households.json
+          
+          echo "✅ JSON artifact prepared from real generator output"
+          echo "📄 File size: $(stat -f%z validation_households.json 2>/dev/null || stat -c%s validation_households.json) bytes"
+          
+          # Show a preview of the JSON structure
+          python -c "
         import json
-        from datetime import datetime
+        with open('validation_households.json', 'r') as f:
+            data = json.load(f)
         
-        # Generate mock household data
-        mock_households = []
-        count = int('${{ steps.set_params.outputs.count }}')
+        print('📋 JSON Structure Preview:')
+        print(f'  - Metadata: {list(data.get(\"metadata\", {}).keys())}')
+        print(f'  - Households: {len(data.get(\"households\", []))} families')
         
-        for i in range(count):
-            household = {
-                'household_id': f'TAX_${{ steps.set_params.outputs.year }}_{100000 + i}',
-                'tax_year': int('${{ steps.set_params.outputs.year }}'),
-                'state_name': 'Mock State',
-                'filing_status': 'Single',
-                'total_household_income': 50000 + (i * 5000),
-                'number_of_dependents': i % 3,
-                'members': [
-                    {
-                        'role': 'Head of Household',
-                        'age': 30 + i,
-                        'gender': 'Female' if i % 2 else 'Male',
-                        'employment_status': 'Employed',
-                        'occupation': 'Mock Occupation',
-                        'annual_income': 50000 + (i * 5000),
-                        'is_dependent': False
-                    }
-                ]
-            }
-            mock_households.append(household)
+        if data.get('households'):
+            sample = data['households'][0]
+            print(f'  - Sample household fields: {list(sample.keys())}')
+            if sample.get('members'):
+                print(f'  - Sample member fields: {list(sample[\"members\"][0].keys())}')
+          "
+        else
+          echo "❌ No generated households file found for artifact creation"
+          exit 1
+        fi
+    
+    - name: Generate Family Summary Report
+      run: |
+        echo ""
+        echo "👨‍👩‍👧‍👦 FAMILY GENERATION SUMMARY REPORT"
+        echo "======================================="
         
-        export_data = {
-            'metadata': {
-                'total_households': len(mock_households),
-                'tax_year': int('${{ steps.set_params.outputs.year }}'),
-                'generation_date': datetime.now().isoformat(),
-                'data_sources': ['Mock Data for GitHub Actions Testing'],
-                'purpose': 'GitHub Actions validation artifact'
-            },
-            'households': mock_households
+        if [ -f "generated_households.json" ]; then
+          python -c "
+        import json
+        
+        # Load the generated households
+        with open('generated_households.json', 'r') as f:
+            data = json.load(f)
+        
+        households = data.get('households', [])
+        metadata = data.get('metadata', {})
+        
+        if not households:
+            print('❌ No households found in output file')
+            exit(1)
+        
+        print(f'📊 Generated {len(households)} families for tax year {metadata.get(\"tax_year\", \"Unknown\")}')
+        print(f'📅 Generation date: {metadata.get(\"generation_date\", \"Unknown\")}')
+        print()
+        
+        # Display first few families in detail
+        print('📋 SAMPLE FAMILIES:')
+        print('-' * 50)
+        
+        for i, household in enumerate(households[:3]):  # Show first 3 families
+            print(f'Family {i+1}: {household[\"household_id\"]}')
+            print(f'  📍 Location: {household[\"state_name\"]}')
+            print(f'  🧬 Race/Ethnicity: {household.get(\"primary_race\", \"Unknown\")}')
+            print(f'  📋 Filing Status: {household[\"filing_status\"]}')
+            print(f'  💰 Household Income: \${household[\"total_household_income\"]:,}')
+            print(f'  👥 Size: {household[\"household_size\"]} members ({household[\"number_of_dependents\"]} dependents)')
+            print(f'  👤 Members:')
+            
+            for member in household['members']:
+                income_str = f\", \${member['annual_income']:,}\" if member['annual_income'] > 0 else ''
+                occupation_str = f\" ({member.get('occupation', 'No Job')})\" if member.get('occupation') else ''
+                dependent_str = ' [Dependent]' if member.get('is_dependent', False) else ''
+                
+                print(f'    - {member[\"role\"]}: {member[\"gender\"]}, Age {member[\"age\"]}, {member[\"employment_status\"]}{occupation_str}{income_str}{dependent_str}')
+            print()
+        
+        if len(households) > 3:
+            print(f'... and {len(households) - 3} more families')
+            print()
+        
+        # Generate summary statistics
+        total_income = sum(h['total_household_income'] for h in households)
+        avg_income = total_income / len(households)
+        
+        # Filing status distribution
+        filing_counts = {}
+        for h in households:
+            status = h['filing_status']
+            filing_counts[status] = filing_counts.get(status, 0) + 1
+        
+        # State distribution
+        state_counts = {}
+        for h in households:
+            state = h['state_name']
+            state_counts[state] = state_counts.get(state, 0) + 1
+        
+        # Income brackets
+        income_brackets = {
+            'Under \$30K': sum(1 for h in households if h['total_household_income'] < 30000),
+            '\$30K-\$60K': sum(1 for h in households if 30000 <= h['total_household_income'] < 60000),
+            '\$60K-\$100K': sum(1 for h in households if 60000 <= h['total_household_income'] < 100000),
+            '\$100K+': sum(1 for h in households if h['total_household_income'] >= 100000)
         }
         
-        # Write to JSON file
-        with open('validation_households.json', 'w') as f:
-            json.dump(export_data, f, indent=2)
+        # Tax complexity indicators
+        with_dependents = sum(1 for h in households if h['number_of_dependents'] > 0)
+        multiple_incomes = sum(1 for h in households if len([m for m in h['members'] if m['annual_income'] > 0]) > 1)
         
-        print(f'✅ Generated {len(mock_households)} mock households in JSON format')
-        print('📁 File: validation_households.json')
-        "
+        print('📊 STATISTICAL SUMMARY:')
+        print('-' * 30)
+        print(f'Total Families: {len(households)}')
+        print(f'Average Household Income: \${avg_income:,.0f}')
+        print(f'Total Combined Income: \${total_income:,}')
+        print()
         
-        # Verify file was created
-        if [ -f "validation_households.json" ]; then
-          echo "✅ JSON artifact created successfully"
-          echo "📄 File size: $(stat -f%z validation_households.json 2>/dev/null || stat -c%s validation_households.json) bytes"
+        print('📋 Filing Status Distribution:')
+        for status, count in sorted(filing_counts.items(), key=lambda x: x[1], reverse=True):
+            percentage = (count / len(households)) * 100
+            print(f'  {status}: {count} ({percentage:.1f}%)')
+        print()
+        
+        print('🗺️  Geographic Distribution:')
+        for state, count in sorted(state_counts.items(), key=lambda x: x[1], reverse=True):
+            percentage = (count / len(households)) * 100
+            print(f'  {state}: {count} ({percentage:.1f}%)')
+        print()
+        
+        print('💵 Income Distribution:')
+        for bracket, count in income_brackets.items():
+            percentage = (count / len(households)) * 100
+            print(f'  {bracket}: {count} ({percentage:.1f}%)')
+        print()
+        
+        print('🧮 Tax Scenario Complexity:')
+        print(f'  Families with dependents: {with_dependents} ({(with_dependents/len(households)*100):.1f}%)')
+        print(f'  Multiple income sources: {multiple_incomes} ({(multiple_incomes/len(households)*100):.1f}%)')
+        print()
+        
+        # Generate practice scenarios
+        print('💡 TAX PREPARATION PRACTICE SCENARIOS:')
+        print('-' * 40)
+        
+        scenarios = []
+        for h in households:
+            complexity_factors = []
+            
+            if h['number_of_dependents'] > 0:
+                complexity_factors.append('Child Tax Credit')
+            
+            if h['filing_status'] == 'Head of Household':
+                complexity_factors.append('Head of Household Filing')
+            
+            if h['total_household_income'] < 30000:
+                complexity_factors.append('Earned Income Credit')
+            
+            high_earners = [m for m in h['members'] if m['annual_income'] > 80000]
+            if high_earners:
+                complexity_factors.append('Higher Income Tax Brackets')
+            
+            self_employed = [m for m in h['members'] if m.get('income_type') == '1099-MISC']
+            if self_employed:
+                complexity_factors.append('Self-Employment Tax')
+            
+            multiple_w2 = len([m for m in h['members'] if m['annual_income'] > 0])
+            if multiple_w2 > 1:
+                complexity_factors.append('Multiple W-2 Forms')
+            
+            if complexity_factors:
+                scenarios.append({
+                    'id': h['household_id'],
+                    'factors': complexity_factors
+                })
+        
+        for i, scenario in enumerate(scenarios[:5]):  # Show top 5 scenarios
+            print(f'{i+1}. {scenario[\"id\"]}: {\" | \".join(scenario[\"factors\"])}')
+        
+        print()
+        print('✅ Family generation and analysis completed!')
+        print('📁 Full data available in generated_households.json')
+          "
         else
-          echo "❌ Failed to create JSON artifact"
+          echo "❌ No household data file found to analyze"
           exit 1
         fi
     
     - name: Generate summary report
       run: |
-        echo "📊 VALIDATION SUMMARY REPORT"
-        echo "=========================="
+        echo ""
+        echo "📊 WORKFLOW SUMMARY"
+        echo "=================="
         echo "Scenario: ${{ steps.set_params.outputs.scenario }}"
-        echo "Python Version: 3.11"
+        echo "Python Version: 3.11" 
         echo "Household Count: ${{ steps.set_params.outputs.count }}"
         echo "Tax Year: ${{ steps.set_params.outputs.year }}"
         echo "JSON Artifact: ${{ steps.set_params.outputs.json_artifact }}"
         echo ""
-        echo "✅ All validation steps completed successfully"
+        echo "✅ Tax household generation completed successfully!"
         echo ""
         echo "Next Steps:"
-        echo "- Review any warnings above"
-        echo "- Test with real database connection if needed"
-        echo "- Run tax_hh_gen.py with validated parameters"
+        echo "- Review the family generation summary above"
+        echo "- Download JSON artifact if enabled"
+        echo "- Use generated families for tax preparation practice"
     
     - name: Upload JSON artifact
       if: steps.set_params.outputs.json_artifact == 'true'
