@@ -19,34 +19,6 @@ on:
         default: '5'
         type: string
       
-      target_state:
-        description: 'Target state (leave empty for random)'
-        required: false
-        default: ''
-        type: choice
-        options:
-          - ''
-          - 'California'
-          - 'Texas' 
-          - 'Florida'
-          - 'New York'
-          - 'Pennsylvania'
-          - 'Illinois'
-          - 'Ohio'
-          - 'Georgia'
-          - 'North Carolina'
-          - 'Michigan'
-          - 'New Jersey'
-          - 'Virginia'
-          - 'Washington'
-          - 'Arizona'
-          - 'Massachusetts'
-          - 'Tennessee'
-          - 'Indiana'
-          - 'Missouri'
-          - 'Maryland'
-          - 'Wisconsin'
-      
       tax_year:
         description: 'Tax year for generation'
         required: false
@@ -93,19 +65,14 @@ jobs:
   validate-generator:
     runs-on: ubuntu-latest
     
-    strategy:
-      matrix:
-        python-version: [3.9, 3.10, 3.11]
-      fail-fast: false
-    
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
     
-    - name: Set up Python ${{ matrix.python-version }}
+    - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: '3.11'
     
     - name: Install dependencies
       run: |
@@ -124,7 +91,6 @@ jobs:
       run: |
         # Set default values
         COUNT="${{ github.event.inputs.household_count || '5' }}"
-        STATE="${{ github.event.inputs.target_state || '' }}"
         YEAR="${{ github.event.inputs.tax_year || '2023' }}"
         SCENARIO="${{ github.event.inputs.test_scenario || 'basic_validation' }}"
         VALIDATION="${{ github.event.inputs.validation_level || 'standard' }}"
@@ -141,20 +107,18 @@ jobs:
         if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
           SCENARIO="basic_validation"
           COUNT="5"
-          STATE=""
           VALIDATION="basic"
           JSON_ARTIFACT="false"
         fi
         
         echo "count=$COUNT" >> $GITHUB_OUTPUT
-        echo "state=$STATE" >> $GITHUB_OUTPUT
         echo "year=$YEAR" >> $GITHUB_OUTPUT
         echo "scenario=$SCENARIO" >> $GITHUB_OUTPUT
         echo "validation=$VALIDATION" >> $GITHUB_OUTPUT
         echo "json_artifact=$JSON_ARTIFACT" >> $GITHUB_OUTPUT
         
         echo "🎯 Test Scenario: $SCENARIO"
-        echo "📊 Parameters: Count=$COUNT, State=$STATE, Year=$YEAR"
+        echo "📊 Parameters: Count=$COUNT, Year=$YEAR"
         echo "🔍 Validation Level: $VALIDATION"
         echo "💾 JSON Artifact: $JSON_ARTIFACT"
     
@@ -222,7 +186,6 @@ jobs:
         # Mock basic validation without real database
         print('🏠 Simulating basic household generation...')
         print('✅ Would generate ${{ steps.set_params.outputs.count }} households')
-        print('📍 Target state: ${{ steps.set_params.outputs.state || 'Random' }}')
         print('📅 Tax year: ${{ steps.set_params.outputs.year }}')
         print('✅ Basic validation simulation completed')
             "
@@ -320,7 +283,7 @@ jobs:
             household = {
                 'household_id': f'TAX_${{ steps.set_params.outputs.year }}_{100000 + i}',
                 'tax_year': int('${{ steps.set_params.outputs.year }}'),
-                'state_name': '${{ steps.set_params.outputs.state }}' or 'Mock State',
+                'state_name': 'Mock State',
                 'filing_status': 'Single',
                 'total_household_income': 50000 + (i * 5000),
                 'number_of_dependents': i % 3,
@@ -371,9 +334,8 @@ jobs:
         echo "📊 VALIDATION SUMMARY REPORT"
         echo "=========================="
         echo "Scenario: ${{ steps.set_params.outputs.scenario }}"
-        echo "Python Version: ${{ matrix.python-version }}"
+        echo "Python Version: 3.11"
         echo "Household Count: ${{ steps.set_params.outputs.count }}"
-        echo "Target State: ${{ steps.set_params.outputs.state || 'Random' }}"
         echo "Tax Year: ${{ steps.set_params.outputs.year }}"
         echo "Validation Level: ${{ steps.set_params.outputs.validation }}"
         echo "JSON Artifact: ${{ steps.set_params.outputs.json_artifact }}"
@@ -389,7 +351,7 @@ jobs:
       if: steps.set_params.outputs.json_artifact == 'true'
       uses: actions/upload-artifact@v3
       with:
-        name: validation-households-${{ matrix.python-version }}-${{ steps.set_params.outputs.scenario }}
+        name: validation-households-${{ steps.set_params.outputs.scenario }}
         path: validation_households.json
         retention-days: 30
     
@@ -397,7 +359,7 @@ jobs:
       if: failure()
       uses: actions/upload-artifact@v3
       with:
-        name: validation-logs-${{ matrix.python-version }}-${{ steps.set_params.outputs.scenario }}
+        name: validation-logs-${{ steps.set_params.outputs.scenario }}
         path: |
           *.log
           test_output.json
