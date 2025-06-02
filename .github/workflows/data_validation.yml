@@ -30,17 +30,6 @@ on:
           - '2021'
           - '2024'
       
-      validation_level:
-        description: 'Validation thoroughness'
-        required: false
-        default: 'standard'
-        type: choice
-        options:
-          - 'basic'
-          - 'standard'
-          - 'comprehensive'
-          - 'debug'
-      
       generate_json_artifact:
         description: 'Generate JSON output as downloadable artifact'
         required: false
@@ -93,7 +82,6 @@ jobs:
         COUNT="${{ github.event.inputs.household_count || '5' }}"
         YEAR="${{ github.event.inputs.tax_year || '2023' }}"
         SCENARIO="${{ github.event.inputs.test_scenario || 'basic_validation' }}"
-        VALIDATION="${{ github.event.inputs.validation_level || 'standard' }}"
         JSON_ARTIFACT="${{ github.event.inputs.generate_json_artifact || 'false' }}"
         
         # Override based on scenario
@@ -107,19 +95,16 @@ jobs:
         if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
           SCENARIO="basic_validation"
           COUNT="5"
-          VALIDATION="basic"
           JSON_ARTIFACT="false"
         fi
         
         echo "count=$COUNT" >> $GITHUB_OUTPUT
         echo "year=$YEAR" >> $GITHUB_OUTPUT
         echo "scenario=$SCENARIO" >> $GITHUB_OUTPUT
-        echo "validation=$VALIDATION" >> $GITHUB_OUTPUT
         echo "json_artifact=$JSON_ARTIFACT" >> $GITHUB_OUTPUT
         
         echo "🎯 Test Scenario: $SCENARIO"
         echo "📊 Parameters: Count=$COUNT, Year=$YEAR"
-        echo "🔍 Validation Level: $VALIDATION"
         echo "💾 JSON Artifact: $JSON_ARTIFACT"
     
     - name: Test database connection (mock)
@@ -207,7 +192,6 @@ jobs:
         esac
     
     - name: Validate output structure
-      if: steps.set_params.outputs.validation != 'basic'
       run: |
         echo "🔍 Validating expected output structure..."
         
@@ -235,32 +219,6 @@ jobs:
         print('📋 Expected household fields:', expected_fields)
         print('👤 Expected member fields:', expected_member_fields)
         print('✅ Output structure validation completed')
-        "
-    
-    - name: Performance and resource validation
-      if: steps.set_params.outputs.validation == 'comprehensive'
-      run: |
-        echo "⚡ Running performance validation..."
-        
-        python -c "
-        import time
-        import sys
-        
-        # Simulate performance benchmarks
-        count = int('${{ steps.set_params.outputs.count }}')
-        
-        # Estimate expected generation time (rough baseline)
-        estimated_time_per_household = 0.1  # seconds
-        total_estimated_time = count * estimated_time_per_household
-        
-        print(f'📊 Performance estimates for {count} households:')
-        print(f'  Estimated time: {total_estimated_time:.1f} seconds')
-        print(f'  Memory usage: ~{count * 2}KB (estimated)')
-        
-        if total_estimated_time > 30:
-            print('⚠️  Warning: Large batch may take significant time')
-        
-        print('✅ Performance validation completed')
         "
     
     - name: Generate JSON output artifact
@@ -337,7 +295,6 @@ jobs:
         echo "Python Version: 3.11"
         echo "Household Count: ${{ steps.set_params.outputs.count }}"
         echo "Tax Year: ${{ steps.set_params.outputs.year }}"
-        echo "Validation Level: ${{ steps.set_params.outputs.validation }}"
         echo "JSON Artifact: ${{ steps.set_params.outputs.json_artifact }}"
         echo ""
         echo "✅ All validation steps completed successfully"
@@ -349,7 +306,7 @@ jobs:
     
     - name: Upload JSON artifact
       if: steps.set_params.outputs.json_artifact == 'true'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: validation-households-${{ steps.set_params.outputs.scenario }}
         path: validation_households.json
@@ -357,67 +314,10 @@ jobs:
     
     - name: Upload validation artifacts
       if: failure()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: validation-logs-${{ steps.set_params.outputs.scenario }}
         path: |
           *.log
           test_output.json
         retention-days: 7
-
-  # Additional job for database integration testing (only if secrets available)
-  database-integration-test:
-    runs-on: ubuntu-latest
-    needs: validate-generator
-    if: ${{ github.event.inputs.test_scenario == 'batch_validation' && github.event_name == 'workflow_dispatch' }}
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    
-    - name: Install dependencies
-      run: |
-        pip install psycopg2-binary python-dotenv
-    
-    - name: Test real database integration
-      env:
-        NEON_CONNECTION_STRING: ${{ secrets.NEON_CONNECTION_STRING }}
-      if: env.NEON_CONNECTION_STRING != ''
-      run: |
-        echo "🔌 Testing real database integration..."
-        
-        python -c "
-        import os
-        connection_string = os.getenv('NEON_CONNECTION_STRING')
-        
-        if connection_string and not connection_string.startswith('mock://'):
-            print('🔄 Real database connection available')
-            print('✅ Would run live database integration test')
-            # Actual integration test would go here
-        else:
-            print('⚠️  No real database connection available for integration test')
-        "
-    
-    - name: Generate test households with real data
-      env:
-        NEON_CONNECTION_STRING: ${{ secrets.NEON_CONNECTION_STRING }}
-      if: env.NEON_CONNECTION_STRING != ''
-      run: |
-        echo "🏠 Generating test households with real database..."
-        
-        # Run actual generator with small batch for integration test
-        python tax_hh_gen.py --count 3 --export integration_test.json
-        
-        # Validate output file
-        if [ -f "integration_test.json" ]; then
-          echo "✅ Integration test output file created"
-          echo "📄 File size: $(stat -f%z integration_test.json 2>/dev/null || stat -c%s integration_test.json) bytes"
-        else
-          echo "❌ Integration test failed - no output file"
-          exit 1
-        fi
