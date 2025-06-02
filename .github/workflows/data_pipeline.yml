@@ -350,12 +350,12 @@ jobs:
     - name: Test family generation
       run: |
         echo "🏠 Testing family generation with imported data..."
-        python census_family_generator.py --count 5
+        python fam_hh_gen.py --count 5
         
     - name: Test state-specific generation
       run: |
         echo "🏠 Testing state-specific family generation..."
-        python census_family_generator.py --state California --count 3
+        python fam_hh_gen.py --state California --count 3
 
   cleanup:
     runs-on: ubuntu-latest
