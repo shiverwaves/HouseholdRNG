@@ -79,14 +79,14 @@ on:
   push:
     branches: [ main ]
     paths: 
-      - 'tax_household_generator.py'
+      - 'tax_hh_gen.py'
       - '.github/workflows/validate-tax-household-generator.yml'
 
   # Auto-trigger on PRs (basic validation only)
   pull_request:
     branches: [ main ]
     paths:
-      - 'tax_household_generator.py'
+      - 'tax_hh_gen.py'
       - '.github/workflows/validate-tax-household-generator.yml'
 
 jobs:
@@ -116,7 +116,7 @@ jobs:
     
     - name: Verify script syntax
       run: |
-        python -m py_compile tax_household_generator.py
+        python -m py_compile tax_hh_gen.py
         echo "✅ Script syntax validation passed"
     
     - name: Set test parameters based on scenario
@@ -191,7 +191,7 @@ jobs:
         
         try:
             # Test imports
-            from tax_household_generator import TaxHouseholdGenerator, format_currency
+            from tax_hh_gen import TaxHouseholdGenerator, format_currency
             print('✅ Import test passed')
             
             # Test utility functions
@@ -383,7 +383,7 @@ jobs:
         echo "Next Steps:"
         echo "- Review any warnings above"
         echo "- Test with real database connection if needed"
-        echo "- Run tax_household_generator.py with validated parameters"
+        echo "- Run tax_hh_gen.py with validated parameters"
     
     - name: Upload JSON artifact
       if: steps.set_params.outputs.json_artifact == 'true'
