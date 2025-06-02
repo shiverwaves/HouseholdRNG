@@ -183,25 +183,25 @@ class TaxHouseholdGenerator:
             self._occupation_cache['state_occupations'] = {}
     
     def _weighted_random_selection(self, items: Dict[str, Any], weight_key: str = 'percent') -> str:
-    """Select item based on weighted probabilities"""
-    if not items:
-        return None
-    
-    # Calculate cumulative weights
-    total_weight = 0
-    cumulative_weights = []
-    item_keys = list(items.keys())
-    
-    for key in item_keys:
-        # Handle both dict and direct float values
-        if isinstance(items[key], dict):
-            weight = items[key].get(weight_key, items[key].get('weight', 1))
-        else:
-            # Direct float/numeric value (like in state_weights)
-            weight = float(items[key]) if items[key] is not None else 1
+        """Select item based on weighted probabilities"""
+        if not items:
+            return None
         
-        total_weight += weight
-        cumulative_weights.append(total_weight)
+        # Calculate cumulative weights
+        total_weight = 0
+        cumulative_weights = []
+        item_keys = list(items.keys())
+        
+        for key in item_keys:
+            # Handle both dict and direct float values
+            if isinstance(items[key], dict):
+                weight = items[key].get(weight_key, items[key].get('weight', 1))
+            else:
+                # Direct float/numeric value (like in state_weights)
+                weight = float(items[key]) if items[key] is not None else 1
+            
+            total_weight += weight
+            cumulative_weights.append(total_weight)
         
         if total_weight == 0:
             return random.choice(item_keys)
