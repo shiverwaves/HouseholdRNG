@@ -233,8 +233,8 @@ jobs:
     - name: Generate Family Summary Report
       run: |
         echo ""
-        echo "👨‍👩‍👧‍👦 FAMILY GENERATION SUMMARY REPORT"
-        echo "======================================="
+        echo "👨‍👩‍👧‍👦 GENERATED FAMILIES DETAILS"
+        echo "=================================="
         
         if [ -f "generated_households.json" ]; then
           python -c "
@@ -255,11 +255,8 @@ jobs:
         print(f'📅 Generation date: {metadata.get(\"generation_date\", \"Unknown\")}')
         print()
         
-        # Display first few families in detail
-        print('📋 SAMPLE FAMILIES:')
-        print('-' * 50)
-        
-        for i, household in enumerate(households[:3]):  # Show first 3 families
+        # Display ALL families in complete detail
+        for i, household in enumerate(households):
             print(f'Family {i+1}: {household[\"household_id\"]}')
             print(f'  📍 Location: {household[\"state_name\"]}')
             print(f'  🧬 Race/Ethnicity: {household.get(\"primary_race\", \"Unknown\")}')
@@ -272,113 +269,12 @@ jobs:
                 income_str = f\", \${member['annual_income']:,}\" if member['annual_income'] > 0 else ''
                 occupation_str = f\" ({member.get('occupation', 'No Job')})\" if member.get('occupation') else ''
                 dependent_str = ' [Dependent]' if member.get('is_dependent', False) else ''
+                income_type_str = f\" [{member.get('income_type', 'Unknown')}]\" if member.get('income_type') and member['annual_income'] > 0 else ''
                 
-                print(f'    - {member[\"role\"]}: {member[\"gender\"]}, Age {member[\"age\"]}, {member[\"employment_status\"]}{occupation_str}{income_str}{dependent_str}')
+                print(f'    - {member[\"role\"]}: {member[\"gender\"]}, Age {member[\"age\"]}, {member[\"employment_status\"]}{occupation_str}{income_str}{income_type_str}{dependent_str}')
             print()
         
-        if len(households) > 3:
-            print(f'... and {len(households) - 3} more families')
-            print()
-        
-        # Generate summary statistics
-        total_income = sum(h['total_household_income'] for h in households)
-        avg_income = total_income / len(households)
-        
-        # Filing status distribution
-        filing_counts = {}
-        for h in households:
-            status = h['filing_status']
-            filing_counts[status] = filing_counts.get(status, 0) + 1
-        
-        # State distribution
-        state_counts = {}
-        for h in households:
-            state = h['state_name']
-            state_counts[state] = state_counts.get(state, 0) + 1
-        
-        # Income brackets
-        income_brackets = {
-            'Under \$30K': sum(1 for h in households if h['total_household_income'] < 30000),
-            '\$30K-\$60K': sum(1 for h in households if 30000 <= h['total_household_income'] < 60000),
-            '\$60K-\$100K': sum(1 for h in households if 60000 <= h['total_household_income'] < 100000),
-            '\$100K+': sum(1 for h in households if h['total_household_income'] >= 100000)
-        }
-        
-        # Tax complexity indicators
-        with_dependents = sum(1 for h in households if h['number_of_dependents'] > 0)
-        multiple_incomes = sum(1 for h in households if len([m for m in h['members'] if m['annual_income'] > 0]) > 1)
-        
-        print('📊 STATISTICAL SUMMARY:')
-        print('-' * 30)
-        print(f'Total Families: {len(households)}')
-        print(f'Average Household Income: \${avg_income:,.0f}')
-        print(f'Total Combined Income: \${total_income:,}')
-        print()
-        
-        print('📋 Filing Status Distribution:')
-        for status, count in sorted(filing_counts.items(), key=lambda x: x[1], reverse=True):
-            percentage = (count / len(households)) * 100
-            print(f'  {status}: {count} ({percentage:.1f}%)')
-        print()
-        
-        print('🗺️  Geographic Distribution:')
-        for state, count in sorted(state_counts.items(), key=lambda x: x[1], reverse=True):
-            percentage = (count / len(households)) * 100
-            print(f'  {state}: {count} ({percentage:.1f}%)')
-        print()
-        
-        print('💵 Income Distribution:')
-        for bracket, count in income_brackets.items():
-            percentage = (count / len(households)) * 100
-            print(f'  {bracket}: {count} ({percentage:.1f}%)')
-        print()
-        
-        print('🧮 Tax Scenario Complexity:')
-        print(f'  Families with dependents: {with_dependents} ({(with_dependents/len(households)*100):.1f}%)')
-        print(f'  Multiple income sources: {multiple_incomes} ({(multiple_incomes/len(households)*100):.1f}%)')
-        print()
-        
-        # Generate practice scenarios
-        print('💡 TAX PREPARATION PRACTICE SCENARIOS:')
-        print('-' * 40)
-        
-        scenarios = []
-        for h in households:
-            complexity_factors = []
-            
-            if h['number_of_dependents'] > 0:
-                complexity_factors.append('Child Tax Credit')
-            
-            if h['filing_status'] == 'Head of Household':
-                complexity_factors.append('Head of Household Filing')
-            
-            if h['total_household_income'] < 30000:
-                complexity_factors.append('Earned Income Credit')
-            
-            high_earners = [m for m in h['members'] if m['annual_income'] > 80000]
-            if high_earners:
-                complexity_factors.append('Higher Income Tax Brackets')
-            
-            self_employed = [m for m in h['members'] if m.get('income_type') == '1099-MISC']
-            if self_employed:
-                complexity_factors.append('Self-Employment Tax')
-            
-            multiple_w2 = len([m for m in h['members'] if m['annual_income'] > 0])
-            if multiple_w2 > 1:
-                complexity_factors.append('Multiple W-2 Forms')
-            
-            if complexity_factors:
-                scenarios.append({
-                    'id': h['household_id'],
-                    'factors': complexity_factors
-                })
-        
-        for i, scenario in enumerate(scenarios[:5]):  # Show top 5 scenarios
-            print(f'{i+1}. {scenario[\"id\"]}: {\" | \".join(scenario[\"factors\"])}')
-        
-        print()
-        print('✅ Family generation and analysis completed!')
-        print('📁 Full data available in generated_households.json')
+        print(f'✅ Displayed all {len(households)} families in complete detail')
           "
         else
           echo "❌ No household data file found to analyze"
