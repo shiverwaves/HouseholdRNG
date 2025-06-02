@@ -1,18 +1,9 @@
-name: Validate Tax Household Generator
+name: Generate Tax Households
 
 on:
-  # Manual trigger with various testing scenarios
+  # Manual trigger with family generation options
   workflow_dispatch:
     inputs:
-      test_scenario:
-        description: 'Test scenario to run'
-        required: true
-        default: 'basic_validation'
-        type: choice
-        options:
-          - basic_validation
-          - batch_validation
-      
       household_count:
         description: 'Number of households to generate'
         required: false
@@ -36,22 +27,22 @@ on:
         default: false
         type: boolean
 
-  # Auto-trigger on pushes to main (basic validation only)
+  # Auto-trigger on pushes to main
   push:
     branches: [ main ]
     paths: 
       - 'tax_hh_gen.py'
-      - '.github/workflows/validate-tax-household-generator.yml'
+      - '.github/workflows/generate-tax-households.yml'
 
-  # Auto-trigger on PRs (basic validation only)
+  # Auto-trigger on PRs
   pull_request:
     branches: [ main ]
     paths:
       - 'tax_hh_gen.py'
-      - '.github/workflows/validate-tax-household-generator.yml'
+      - '.github/workflows/generate-tax-households.yml'
 
 jobs:
-  validate-generator:
+  generate-households:
     runs-on: ubuntu-latest
     
     steps:
@@ -75,96 +66,26 @@ jobs:
         python -m py_compile tax_hh_gen.py
         echo "✅ Script syntax validation passed"
     
-    - name: Set test parameters based on scenario
+    - name: Set generation parameters
       id: set_params
       run: |
         # Set default values
         COUNT="${{ github.event.inputs.household_count || '5' }}"
         YEAR="${{ github.event.inputs.tax_year || '2023' }}"
-        SCENARIO="${{ github.event.inputs.test_scenario || 'basic_validation' }}"
         JSON_ARTIFACT="${{ github.event.inputs.generate_json_artifact || 'false' }}"
         
-        # Override based on scenario
-        case "$SCENARIO" in
-          "batch_validation")
-            COUNT="5"  # Use default batch size
-            ;;
-        esac
-        
-        # For auto-triggers (push/PR), use basic validation
+        # For auto-triggers (push/PR), use defaults
         if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
-          SCENARIO="basic_validation"
           COUNT="5"
           JSON_ARTIFACT="false"
         fi
         
         echo "count=$COUNT" >> $GITHUB_OUTPUT
         echo "year=$YEAR" >> $GITHUB_OUTPUT
-        echo "scenario=$SCENARIO" >> $GITHUB_OUTPUT
         echo "json_artifact=$JSON_ARTIFACT" >> $GITHUB_OUTPUT
         
-        echo "🎯 Test Scenario: $SCENARIO"
-        echo "📊 Parameters: Count=$COUNT, Year=$YEAR"
+        echo "🏠 Generating $COUNT families for tax year $YEAR"
         echo "💾 JSON Artifact: $JSON_ARTIFACT"
-    
-    - name: Test database connection requirements
-      run: |
-        echo "🔌 Testing database connection requirements..."
-        
-        # Check if required environment variable structure is understood
-        python -c "
-        import os
-        
-        # Check for database connection requirements
-        print('📋 Database connection requirements:')
-        print('  - NEON_CONNECTION_STRING must be set as repository secret')
-        print('  - Connection string should include: host, port, database, user, password')
-        print('  - Script will validate actual connection when running')
-        print('✅ Database requirements validation completed')
-        "
-    
-    - name: Run basic functionality test
-      run: |
-        echo "🧪 Running basic functionality test..."
-        
-        # Test script imports and basic structure
-        python -c "
-        import sys
-        sys.path.append('.')
-        
-        try:
-            # Test imports
-            from tax_hh_gen import TaxHouseholdGenerator, format_currency
-            print('✅ Import test passed')
-            
-            # Test utility functions
-            formatted = format_currency(50000)
-            assert 'K' in formatted or '$' in formatted
-            print('✅ Utility function test passed')
-            
-            print('✅ Basic functionality validation completed')
-            
-        except ImportError as e:
-            print(f'❌ Import error: {e}')
-            sys.exit(1)
-        except Exception as e:
-            print(f'❌ Basic functionality test failed: {e}')
-            sys.exit(1)
-        "
-    
-    - name: Run scenario-specific validation
-      run: |
-        echo "🎯 Running scenario: ${{ steps.set_params.outputs.scenario }}"
-        
-        case "${{ steps.set_params.outputs.scenario }}" in
-          "basic_validation")
-            echo "✅ Basic validation: Script syntax and structure validated"
-            ;;
-            
-          "batch_validation")
-            echo "✅ Batch validation: Ready to generate ${{ steps.set_params.outputs.count }} households"
-            ;;
-        esac
     
     - name: Run Tax Household Generator
       env:
@@ -284,10 +205,9 @@ jobs:
     - name: Generate summary report
       run: |
         echo ""
-        echo "📊 WORKFLOW SUMMARY"
-        echo "=================="
-        echo "Scenario: ${{ steps.set_params.outputs.scenario }}"
-        echo "Python Version: 3.11" 
+        echo "📊 GENERATION SUMMARY"
+        echo "===================="
+        echo "Python Version: 3.11"
         echo "Household Count: ${{ steps.set_params.outputs.count }}"
         echo "Tax Year: ${{ steps.set_params.outputs.year }}"
         echo "JSON Artifact: ${{ steps.set_params.outputs.json_artifact }}"
@@ -295,7 +215,7 @@ jobs:
         echo "✅ Tax household generation completed successfully!"
         echo ""
         echo "Next Steps:"
-        echo "- Review the family generation summary above"
+        echo "- Review the family generation details above"
         echo "- Download JSON artifact if enabled"
         echo "- Use generated families for tax preparation practice"
     
@@ -303,7 +223,7 @@ jobs:
       if: steps.set_params.outputs.json_artifact == 'true'
       uses: actions/upload-artifact@v4
       with:
-        name: validation-households-${{ steps.set_params.outputs.scenario }}
+        name: tax-households-${{ steps.set_params.outputs.count }}-families-${{ steps.set_params.outputs.year }}
         path: validation_households.json
         retention-days: 30
     
@@ -311,7 +231,7 @@ jobs:
       if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: validation-logs-${{ steps.set_params.outputs.scenario }}
+        name: generation-logs-${{ steps.set_params.outputs.count }}-families
         path: |
           *.log
           test_output.json
