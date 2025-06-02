@@ -41,14 +41,14 @@ on:
     branches: [ main ]
     paths: 
       - 'tax_hh_gen.py'
-      - '.github/workflows/validate-tax-household-generator.yml'
+      - '.github/workflows/validate-tax_hh_gen.yml'
 
   # Auto-trigger on PRs (basic validation only)
   pull_request:
     branches: [ main ]
     paths:
       - 'tax_hh_gen.py'
-      - '.github/workflows/validate-tax-household-generator.yml'
+      - '.github/workflows/validate-tax_hh_gen.yml'
 
 jobs:
   validate-generator:
