@@ -20,6 +20,14 @@ import os
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
+# Load environment variables from .env file if it exists
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # dotenv not available, use system environment variables only
+    pass
+
 class CensusFamilyGenerator:
     """
     Generate random families using state-level Census demographic data
