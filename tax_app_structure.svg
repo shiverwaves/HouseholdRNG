@@ -1,0 +1,159 @@
+<svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .title { font: bold 16px sans-serif; text-anchor: middle; }
+      .section-title { font: bold 14px sans-serif; text-anchor: middle; }
+      .folder { font: 12px sans-serif; }
+      .file { font: 11px sans-serif; fill: #666; }
+      .frontend { fill: #e3f2fd; stroke: #2196f3; }
+      .backend { fill: #f3e5f5; stroke: #9c27b0; }
+      .database { fill: #e8f5e8; stroke: #4caf50; }
+      .external { fill: #fff3e0; stroke: #ff9800; }
+    </style>
+  </defs>
+  
+  <!-- Title -->
+  <text x="600" y="25" class="title">Tax Preparation Practice App Architecture</text>
+  
+  <!-- Frontend Section -->
+  <rect x="50" y="50" width="350" height="650" class="frontend" stroke-width="2" rx="8"/>
+  <text x="225" y="75" class="section-title">Frontend (React SPA)</text>
+  
+  <!-- Frontend folder structure -->
+  <text x="70" y="105" class="folder">📁 src/</text>
+  <text x="90" y="125" class="folder">📁 components/</text>
+  <text x="110" y="145" class="file">📄 Login.jsx</text>
+  <text x="110" y="160" class="file">📄 Dashboard.jsx</text>
+  <text x="110" y="175" class="file">📄 CaseSelection.jsx</text>
+  <text x="110" y="190" class="file">📄 HouseholdOverview.jsx</text>
+  <text x="110" y="205" class="file">📄 DocumentViewer.jsx</text>
+  
+  <text x="90" y="235" class="folder">📁 pages/</text>
+  <text x="110" y="255" class="file">📄 TaxPreparation.jsx</text>
+  <text x="110" y="270" class="file">📄 Form1040.jsx</text>
+  <text x="110" y="285" class="file">📄 ScheduleA.jsx</text>
+  <text x="110" y="300" class="file">📄 ScheduleC.jsx</text>
+  
+  <text x="90" y="330" class="folder">📁 services/</text>
+  <text x="110" y="350" class="file">📄 api.js</text>
+  <text x="110" y="365" class="file">📄 taxCalculations.js</text>
+  <text x="110" y="380" class="file">📄 validations.js</text>
+  
+  <text x="90" y="410" class="folder">📁 store/</text>
+  <text x="110" y="430" class="file">📄 authSlice.js</text>
+  <text x="110" y="445" class="file">📄 caseSlice.js</text>
+  <text x="110" y="460" class="file">📄 taxFormSlice.js</text>
+  
+  <text x="90" y="490" class="folder">📁 utils/</text>
+  <text x="110" y="510" class="file">📄 constants.js</text>
+  <text x="110" y="525" class="file">📄 helpers.js</text>
+  <text x="110" y="540" class="file">📄 formatters.js</text>
+  
+  <text x="90" y="570" class="folder">📁 hooks/</text>
+  <text x="110" y="590" class="file">📄 useAutoSave.js</text>
+  <text x="110" y="605" class="file">📄 useTaxCalculations.js</text>
+  <text x="110" y="620" class="file">📄 useProgress.js</text>
+  
+  <text x="90" y="650" class="folder">📁 assets/</text>
+  <text x="110" y="670" class="file">📄 tax-forms/</text>
+  <text x="110" y="685" class="file">📄 images/</text>
+  
+  <!-- Backend Section -->
+  <rect x="450" y="50" width="300" height="550" class="backend" stroke-width="2" rx="8"/>
+  <text x="600" y="75" class="section-title">Backend API (Node.js)</text>
+  
+  <text x="470" y="105" class="folder">📁 controllers/</text>
+  <text x="490" y="125" class="file">📄 authController.js</text>
+  <text x="490" y="140" class="file">📄 householdController.js</text>
+  <text x="490" y="155" class="file">📄 progressController.js</text>
+  
+  <text x="470" y="185" class="folder">📁 services/</text>
+  <text x="490" y="205" class="file">📄 householdGenerator.js</text>
+  <text x="490" y="220" class="file">📄 occupationService.js</text>
+  <text x="490" y="235" class="file">📄 taxScenarioBuilder.js</text>
+  <text x="490" y="250" class="file">📄 documentGenerator.js</text>
+  
+  <text x="470" y="280" class="folder">📁 models/</text>
+  <text x="490" y="300" class="file">📄 User.js</text>
+  <text x="490" y="315" class="file">📄 PracticeCase.js</text>
+  <text x="490" y="330" class="file">📄 Progress.js</text>
+  
+  <text x="470" y="360" class="folder">📁 data/</text>
+  <text x="490" y="380" class="file">📄 censusData.json</text>
+  <text x="490" y="395" class="file">📄 blsOccupations.json</text>
+  <text x="490" y="410" class="file">📄 taxRules.json</text>
+  <text x="490" y="425" class="file">📄 employerNames.json</text>
+  
+  <text x="470" y="455" class="folder">📁 generators/</text>
+  <text x="490" y="475" class="file">📄 familyGenerator.js</text>
+  <text x="490" y="490" class="file">📄 incomeGenerator.js</text>
+  <text x="490" y="505" class="file">📄 deductionGenerator.js</text>
+  <text x="490" y="520" class="file">📄 w2Generator.js</text>
+  <text x="490" y="535" class="file">📄 1099Generator.js</text>
+  
+  <text x="470" y="565" class="folder">📁 middleware/</text>
+  <text x="490" y="585" class="file">📄 auth.js</text>
+  
+  <!-- Database Section -->
+  <rect x="800" y="50" width="250" height="350" class="database" stroke-width="2" rx="8"/>
+  <text x="925" y="75" class="section-title">Database</text>
+  
+  <text x="820" y="105" class="folder">📊 Users</text>
+  <text x="840" y="125" class="file">- id, email, password</text>
+  <text x="840" y="140" class="file">- skillLevel, preferences</text>
+  
+  <text x="820" y="170" class="folder">📊 PracticeCases</text>
+  <text x="840" y="190" class="file">- id, userId, difficulty</text>
+  <text x="840" y="205" class="file">- householdData, scenario</text>
+  <text x="840" y="220" class="file">- completedAt, accuracy</text>
+  
+  <text x="820" y="250" class="folder">📊 Progress</text>
+  <text x="840" y="270" class="file">- userId, totalCases</text>
+  <text x="840" y="285" class="file">- averageAccuracy</text>
+  <text x="840" y="300" class="file">- skillProgression</text>
+  
+  <text x="820" y="330" class="folder">📊 Parameters</text>
+  <text x="840" y="350" class="file">- difficultySettings</text>
+  <text x="840" y="365" class="file">- scenarioWeights</text>
+  <text x="840" y="380" class="file">- generationRules</text>
+  
+  <!-- External Data -->
+  <rect x="800" y="450" width="250" height="200" class="external" stroke-width="2" rx="8"/>
+  <text x="925" y="475" class="section-title">External Data Sources</text>
+  
+  <text x="820" y="505" class="folder">🏛️ US Census Data</text>
+  <text x="840" y="525" class="file">- Demographics</text>
+  <text x="840" y="540" class="file">- Geographic data</text>
+  
+  <text x="820" y="570" class="folder">📊 BLS Statistics</text>
+  <text x="840" y="590" class="file">- Occupation codes</text>
+  <text x="840" y="605" class="file">- Salary ranges</text>
+  
+  <text x="820" y="635" class="folder">📋 IRS Publications</text>
+  
+  <!-- Data Flow Arrows -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" 
+            refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#666" />
+    </marker>
+  </defs>
+  
+  <!-- Frontend to Backend -->
+  <line x1="400" y1="200" x2="450" y2="200" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <text x="425" y="195" class="file" text-anchor="middle">API calls</text>
+  
+  <!-- Backend to Database -->
+  <line x1="750" y1="200" x2="800" y2="200" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <text x="775" y="195" class="file" text-anchor="middle">queries</text>
+  
+  <!-- External to Backend -->
+  <line x1="800" y1="550" x2="750" y2="400" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <text x="760" y="470" class="file" text-anchor="middle">data import</text>
+  
+  <!-- Key Features Box -->
+  <rect x="50" y="720" width="1100" height="60" fill="#f5f5f5" stroke="#ccc" stroke-width="1" rx="4"/>
+  <text x="70" y="740" class="folder">🔑 Key Architectural Decisions:</text>
+  <text x="70" y="755" class="file">• Client-side tax calculations for real-time feedback • Modular component structure for different tax forms</text>
+  <text x="70" y="770" class="file">• Separate generators for household/income/documents • Parameter-driven scenario generation from database</text>
+</svg>
