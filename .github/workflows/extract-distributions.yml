@@ -65,7 +65,7 @@ jobs:
       
       # Upload SQL files as artifacts
       - name: Upload SQL files
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: distributions-${{ github.event.inputs.state }}
           path: output/*.sql
