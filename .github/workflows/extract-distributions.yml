@@ -14,10 +14,10 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4  # Updated to v4
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5  # Updated to v5
         with:
           python-version: '3.11'
       
@@ -26,14 +26,14 @@ jobs:
       
       # Cache PUMS data
       - name: Cache PUMS data
-        uses: actions/cache@v4
+        uses: actions/cache@v4  # Updated to v4
         with:
           path: cache/pums_cache/
           key: pums-${{ github.event.inputs.state }}-2022
       
       # Cache BLS data (shared across all states)
       - name: Cache BLS data
-        uses: actions/cache@v4
+        uses: actions/cache@v4  # Updated to v4
         with:
           path: cache/bls_cache/
           key: bls-2023
@@ -65,7 +65,7 @@ jobs:
       
       # Upload SQL files as artifacts
       - name: Upload SQL files
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4  # Updated to v4
         with:
           name: distributions-${{ github.event.inputs.state }}
           path: output/*.sql
