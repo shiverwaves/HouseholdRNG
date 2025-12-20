@@ -1,0 +1,72 @@
+name: Extract Distribution Tables
+
+on:
+  workflow_dispatch:
+    inputs:
+      state:
+        description: 'State code (e.g., HI, CA, TX)'
+        required: true
+        default: 'HI'
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      # Cache PUMS data
+      - name: Cache PUMS data
+        uses: actions/cache@v3
+        with:
+          path: cache/pums_cache/
+          key: pums-${{ github.event.inputs.state }}-2022
+      
+      # Cache BLS data (shared across all states)
+      - name: Cache BLS data
+        uses: actions/cache@v3
+        with:
+          path: cache/bls_cache/
+          key: bls-2023
+      
+      # Step 1: Extract PUMS distributions
+      - name: Extract PUMS distributions
+        run: python scripts/extract_pums_distributions.py --state ${{ github.event.inputs.state }} --year 2022
+      
+      # Step 2: Extract BLS distributions
+      - name: Extract BLS distributions
+        run: python scripts/extract_bls_distributions.py --state ${{ github.event.inputs.state }} --year 2023
+      
+      # Step 3: Extract derived distributions
+      - name: Extract derived distributions
+        run: |
+          python scripts/extract_derived_distributions.py \
+            --state ${{ github.event.inputs.state }} \
+            --pums-year 2022 \
+            --bls-year 2023
+      
+      # Validate output files exist
+      - name: Validate output
+        run: |
+          ls -lh output/
+          test -f output/pums_distributions_${{ github.event.inputs.state }}_2022.sql
+          test -f output/bls_occupation_wages_${{ github.event.inputs.state }}_2023.sql
+          test -f output/derived_probabilities_${{ github.event.inputs.state }}_2023.sql
+          echo "✅ All SQL files generated successfully"
+      
+      # Upload SQL files as artifacts
+      - name: Upload SQL files
+        uses: actions/upload-artifact@v3
+        with:
+          name: distributions-${{ github.event.inputs.state }}
+          path: output/*.sql
+          retention-days: 90
