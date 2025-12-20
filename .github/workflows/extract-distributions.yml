@@ -1,4 +1,4 @@
-name: Extract Distribution Tables
+name: Extract Distribution Tables (Fixed)
 
 on:
   workflow_dispatch:
@@ -7,14 +7,30 @@ on:
         description: 'State code (e.g., HI, CA, TX)'
         required: true
         default: 'HI'
+        type: string
       pums_year:
-        description: 'PUMS data year'
+        description: 'PUMS data year (2019-2023)'
         required: true
         default: '2022'
+        type: choice
+        options:
+          - '2019'
+          - '2020'
+          - '2021'
+          - '2022'
+          - '2023'
       bls_year:
-        description: 'BLS data year'
+        description: 'BLS data year (2019-2024)'
         required: true
         default: '2023'
+        type: choice
+        options:
+          - '2019'
+          - '2020'
+          - '2021'
+          - '2022'
+          - '2023'
+          - '2024'
 
 jobs:
   extract:
@@ -28,70 +44,234 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
       
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
       
-      # Cache PUMS data (year-specific)
-      - name: Cache PUMS data
-        uses: actions/cache@v4
-        with:
-          path: cache/pums_cache/
-          key: pums-${{ github.event.inputs.state }}-${{ github.event.inputs.pums_year }}
+      - name: Display configuration
+        run: |
+          echo "🔧 Extraction Configuration"
+          echo "=========================="
+          echo "State: ${{ github.event.inputs.state }}"
+          echo "PUMS Year: ${{ github.event.inputs.pums_year }}"
+          echo "BLS Year: ${{ github.event.inputs.bls_year }}"
+          echo "=========================="
       
-      # Cache BLS data (year-specific, shared across all states)
-      - name: Cache BLS data
-        uses: actions/cache@v4
-        with:
-          path: cache/bls_cache/
-          key: bls-${{ github.event.inputs.bls_year }}
-      
+      # ============================================================================
       # Step 1: Extract PUMS distributions
+      # This will download PUMS data and cache it in cache/pums_cache/
+      # ============================================================================
       - name: Extract PUMS distributions
         run: |
+          echo "📊 Step 1/3: Extracting PUMS distributions..."
           python scripts/extract_pums_distributions.py \
             --state ${{ github.event.inputs.state }} \
             --year ${{ github.event.inputs.pums_year }}
       
-      # Step 2: Extract BLS distributions
+      # ============================================================================
+      # Step 2: Download BLS data with wget (workaround for 403 errors)
+      # Only download if not already in cache
+      # ============================================================================
+      - name: Download BLS data (wget workaround)
+        run: |
+          mkdir -p cache/bls_cache
+          
+          YEAR="${{ github.event.inputs.bls_year }}"
+          YEAR_SHORT="${YEAR:2:2}"
+          EXPECTED_FILE="cache/bls_cache/oews_${YEAR}_state_data.xlsx"
+          
+          # Check if already downloaded
+          if [ -f "$EXPECTED_FILE" ]; then
+            echo "✅ BLS data already exists: $EXPECTED_FILE"
+            ls -lh "$EXPECTED_FILE"
+            exit 0
+          fi
+          
+          echo "⬇️  Downloading BLS data for year ${YEAR}..."
+          echo "URL: https://www.bls.gov/oes/special.requests/oesm${YEAR_SHORT}st.zip"
+          
+          # Download with wget
+          wget \
+            --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            --referer="https://www.bls.gov/oes/" \
+            --tries=5 \
+            --wait=3 \
+            --random-wait \
+            --timeout=180 \
+            --progress=bar:force \
+            -O cache/bls_cache/temp_bls.zip \
+            "https://www.bls.gov/oes/special.requests/oesm${YEAR_SHORT}st.zip"
+          
+          if [ ! -f "cache/bls_cache/temp_bls.zip" ]; then
+            echo "❌ Download failed"
+            exit 1
+          fi
+          
+          # Extract Excel file
+          echo "📦 Extracting Excel file..."
+          unzip -l cache/bls_cache/temp_bls.zip
+          
+          # Try .xlsx then .xls
+          if unzip -j cache/bls_cache/temp_bls.zip "*.xlsx" -d cache/bls_cache/ 2>/dev/null; then
+            mv cache/bls_cache/*.xlsx "$EXPECTED_FILE"
+          elif unzip -j cache/bls_cache/temp_bls.zip "*.xls" -d cache/bls_cache/ 2>/dev/null; then
+            mv cache/bls_cache/*.xls "$EXPECTED_FILE"
+          else
+            echo "❌ No Excel file found"
+            exit 1
+          fi
+          
+          rm cache/bls_cache/temp_bls.zip
+          
+          # Verify
+          if [ -f "$EXPECTED_FILE" ]; then
+            FILE_SIZE=$(stat -c%s "$EXPECTED_FILE" 2>/dev/null || stat -f%z "$EXPECTED_FILE" 2>/dev/null)
+            if [ "$FILE_SIZE" -lt 100000 ]; then
+              echo "❌ File too small ($FILE_SIZE bytes)"
+              exit 1
+            fi
+            echo "✅ BLS data ready: $EXPECTED_FILE"
+            ls -lh "$EXPECTED_FILE"
+          fi
+      
+      # ============================================================================
+      # Step 3: Extract BLS distributions
+      # Uses the file we just downloaded in previous step
+      # ============================================================================
       - name: Extract BLS distributions
         run: |
+          echo "📊 Step 2/3: Extracting BLS distributions..."
           python scripts/extract_bls_distributions.py \
             --state ${{ github.event.inputs.state }} \
             --year ${{ github.event.inputs.bls_year }}
       
-      # Step 3: Extract derived distributions
+      # ============================================================================
+      # Step 4: Verify cache directories have data
+      # ============================================================================
+      - name: Verify cache directories
+        run: |
+          echo "🔍 Verifying cache directories..."
+          
+          echo "PUMS cache:"
+          ls -lh cache/pums_cache/ || echo "❌ PUMS cache empty"
+          
+          echo ""
+          echo "BLS cache:"
+          ls -lh cache/bls_cache/ || echo "❌ BLS cache empty"
+          
+          # Check for expected PUMS files
+          PUMS_HOUSEHOLD="cache/pums_cache/${{ github.event.inputs.pums_year }}_csv_h${{ github.event.inputs.state | lower }}.zip"
+          PUMS_PERSON="cache/pums_cache/${{ github.event.inputs.pums_year }}_csv_p${{ github.event.inputs.state | lower }}.zip"
+          
+          if [ -f "$PUMS_HOUSEHOLD" ]; then
+            echo "✅ PUMS household file exists"
+          else
+            echo "❌ PUMS household file missing: $PUMS_HOUSEHOLD"
+          fi
+          
+          if [ -f "$PUMS_PERSON" ]; then
+            echo "✅ PUMS person file exists"
+          else
+            echo "❌ PUMS person file missing: $PUMS_PERSON"
+          fi
+          
+          # Check for BLS file
+          BLS_FILE="cache/bls_cache/oews_${{ github.event.inputs.bls_year }}_state_data.xlsx"
+          if [ -f "$BLS_FILE" ]; then
+            echo "✅ BLS file exists"
+          else
+            echo "❌ BLS file missing: $BLS_FILE"
+          fi
+      
+      # ============================================================================
+      # Step 5: Extract derived distributions
+      # Now cache directories should have all needed files
+      # ============================================================================
       - name: Extract derived distributions
         run: |
+          echo "📊 Step 3/3: Extracting derived distributions..."
           python scripts/extract_derived_distributions.py \
             --state ${{ github.event.inputs.state }} \
             --pums-year ${{ github.event.inputs.pums_year }} \
             --bls-year ${{ github.event.inputs.bls_year }}
       
-      # Validate output files exist
+      # ============================================================================
+      # Validate output files
+      # ============================================================================
       - name: Validate output
         run: |
+          echo "🔍 Validating generated files..."
           ls -lh output/
-          test -f output/pums_distributions_${{ github.event.inputs.state }}_${{ github.event.inputs.pums_year }}.sql
-          test -f output/bls_occupation_wages_${{ github.event.inputs.state }}_${{ github.event.inputs.bls_year }}.sql
-          test -f output/derived_probabilities_${{ github.event.inputs.state }}_${{ github.event.inputs.bls_year }}.sql
+          
+          PUMS_FILE="output/pums_distributions_${{ github.event.inputs.state }}_${{ github.event.inputs.pums_year }}.sql"
+          BLS_FILE="output/bls_occupation_wages_${{ github.event.inputs.state }}_${{ github.event.inputs.bls_year }}.sql"
+          DERIVED_FILE="output/derived_probabilities_${{ github.event.inputs.state }}_${{ github.event.inputs.bls_year }}.sql"
+          
+          if [ -f "$PUMS_FILE" ]; then
+            echo "✅ PUMS file exists"
+          else
+            echo "❌ PUMS file missing"
+            exit 1
+          fi
+          
+          if [ -f "$BLS_FILE" ]; then
+            echo "✅ BLS file exists"
+          else
+            echo "❌ BLS file missing"
+            exit 1
+          fi
+          
+          if [ -f "$DERIVED_FILE" ]; then
+            echo "✅ Derived file exists"
+          else
+            echo "❌ Derived file missing"
+            exit 1
+          fi
+          
+          echo ""
           echo "✅ All SQL files generated successfully"
       
-      # Display file information
+      # ============================================================================
+      # Show file information
+      # ============================================================================
       - name: Show generated files
         run: |
-          echo "📊 Generated files:"
+          echo ""
+          echo "📊 Generated Distribution Files"
+          echo "================================"
           du -h output/*.sql
           echo ""
-          echo "Files ready for download:"
+          echo "📦 Artifact Contents:"
           echo "  - pums_distributions_${{ github.event.inputs.state }}_${{ github.event.inputs.pums_year }}.sql"
           echo "  - bls_occupation_wages_${{ github.event.inputs.state }}_${{ github.event.inputs.bls_year }}.sql"
           echo "  - derived_probabilities_${{ github.event.inputs.state }}_${{ github.event.inputs.bls_year }}.sql"
       
+      # ============================================================================
       # Upload SQL files as artifacts
+      # ============================================================================
       - name: Upload SQL files
         uses: actions/upload-artifact@v4
         with:
           name: distributions-${{ github.event.inputs.state }}-pums${{ github.event.inputs.pums_year }}-bls${{ github.event.inputs.bls_year }}
           path: output/*.sql
           retention-days: 90
+          if-no-files-found: error
+      
+      # ============================================================================
+      # Summary
+      # ============================================================================
+      - name: Workflow Summary
+        if: always()
+        run: |
+          echo ""
+          echo "🎉 Workflow Complete!"
+          echo ""
+          echo "Configuration:"
+          echo "  State: ${{ github.event.inputs.state }}"
+          echo "  PUMS Year: ${{ github.event.inputs.pums_year }}"
+          echo "  BLS Year: ${{ github.event.inputs.bls_year }}"
+          echo ""
+          echo "Download the SQL files from Artifacts above"
