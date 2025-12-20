@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # Census FTP server with PUMS CSV files (NOT the Census API)
 # These are direct downloads of the complete CSV files
 PUMS_BASE_URL = "https://www2.census.gov/programs-surveys/acs/data/pums/{year}/5-Year/"
-CACHE_DIR = Path("./cache/pums_cache")
+CACHE_DIR = Path("./pums_cache")
 OUTPUT_DIR = Path("./output")
 
 # PUMS file naming convention:
@@ -115,77 +115,26 @@ def load_pums_data(household_zip: Path, person_zip: Path) -> Tuple[pd.DataFrame,
     Load PUMS household and person data from ZIP files.
     
     Extracts the CSV from each ZIP and loads the ENTIRE dataset into memory.
-    Uses optimized dtypes to reduce memory footprint by ~40-50%.
-    
     For a typical state, this means:
     - Household file: ~50,000-200,000 records
     - Person file: ~100,000-500,000 records
     
-    DTYPE OPTIMIZATION:
-    Instead of using int64/float64 for everything (8 bytes each), we use:
-    - int8 (1 byte) for small categorical values: age, sex, household type
-    - int16 (2 bytes) for medium counts
-    - int32 (4 bytes) for weights and larger counts
-    - float32 (4 bytes) for income/dollar amounts
-    
-    This reduces memory usage by 40-50% with no loss of precision.
-    Critical for large states (CA, TX) to fit in GitHub Actions 7GB RAM limit.
-    
     Returns:
         Tuple of (households_df, persons_df)
     """
-    # Household file dtype optimization
-    # Only specify dtypes for columns we actually use
-    household_dtypes = {
-        'SERIALNO': 'str',      # Household ID - keep as string
-        'WGTP': 'int32',        # Household weight (0-10,000 range) - int32 is plenty
-        'NP': 'int8',           # Number of persons (1-20 range) - int8 sufficient
-        'NOC': 'int8',          # Number of own children (0-10 range) - int8 sufficient
-        'HHT': 'int8',          # Household type (1-7 categorical) - int8 sufficient
-        'TEN': 'int8',          # Tenure (1-4 categorical) - int8 sufficient
-        'HINCP': 'float32',     # Household income - float32 gives us $0-$16M range with good precision
-        'TAXAMT': 'float32',    # Property tax amount - float32 sufficient
-        'MRGP': 'float32',      # Monthly mortgage payment - float32 sufficient
-    }
-    
-    # Person file dtype optimization  
-    person_dtypes = {
-        'SERIALNO': 'str',      # Household ID - keep as string to match household file
-        'PWGTP': 'int32',       # Person weight (0-10,000 range) - int32 is plenty
-        'AGEP': 'int8',         # Age (0-99 range) - int8 sufficient
-        'SEX': 'int8',          # Sex (1-2 categorical) - int8 sufficient
-        'ESR': 'int8',          # Employment status (1-6 categorical) - int8 sufficient
-        'RELSHIPP': 'int8',     # Relationship code (20-38 range) - int8 sufficient
-        'SCHL': 'int8',         # Education level (1-24 categorical) - int8 sufficient
-        'WAGP': 'float32',      # Wage/salary income - float32 gives good range
-        'SEMP': 'float32',      # Self-employment income - float32 sufficient
-        'RETP': 'float32',      # Retirement income - float32 sufficient
-        'SSP': 'float32',       # Social Security income - float32 sufficient
-        'SSIP': 'float32',      # Supplemental Security Income - float32 sufficient
-        'INTP': 'float32',      # Interest/dividend income - float32 sufficient
-    }
-    
-    logger.info("Loading household data with optimized dtypes...")
+    logger.info("Loading household data...")
     with zipfile.ZipFile(household_zip, 'r') as z:
         csv_name = [name for name in z.namelist() if name.endswith('.csv')][0]
         with z.open(csv_name) as f:
-            households = pd.read_csv(f, dtype=household_dtypes, low_memory=False)
+            households = pd.read_csv(f, low_memory=False)
     
-    logger.info("Loading person data with optimized dtypes...")
+    logger.info("Loading person data...")
     with zipfile.ZipFile(person_zip, 'r') as z:
         csv_name = [name for name in z.namelist() if name.endswith('.csv')][0]
         with z.open(csv_name) as f:
-            persons = pd.read_csv(f, dtype=person_dtypes, low_memory=False)
-    
-    # Log memory usage for monitoring
-    hh_memory_mb = households.memory_usage(deep=True).sum() / 1024**2
-    person_memory_mb = persons.memory_usage(deep=True).sum() / 1024**2
-    total_memory_mb = hh_memory_mb + person_memory_mb
+            persons = pd.read_csv(f, low_memory=False)
     
     logger.info(f"Loaded {len(households):,} households and {len(persons):,} persons")
-    logger.info(f"Memory usage - Households: {hh_memory_mb:.1f} MB")
-    logger.info(f"Memory usage - Persons: {person_memory_mb:.1f} MB")
-    logger.info(f"Total memory: {total_memory_mb:.1f} MB ({total_memory_mb/1024:.2f} GB)")
     
     return households, persons
 
