@@ -1,35 +1,308 @@
-name: Test Workflow (Minimal)
-
-# This is a minimal test workflow to verify GitHub Actions is working
-# If this workflow shows up in Actions tab with inputs, then the problem
-# is with the main workflow file
+name: Extract Tax Training Data
 
 on:
   workflow_dispatch:
     inputs:
-      test_state:
-        description: 'Test State (e.g., HI)'
+      states:
+        description: 'State codes (comma-separated, e.g., HI or HI,CA,TX)'
         required: true
         default: 'HI'
-      test_mode:
-        description: 'Test Mode'
+      pums_year:
+        description: 'PUMS data year'
+        required: true
+        default: '2022'
+      bls_year:
+        description: 'BLS OEWS data year'
+        required: true
+        default: '2023'
+      output_mode:
+        description: 'Output mode (sql=artifacts, database=upload)'
         required: true
         default: 'sql'
         type: choice
         options:
           - sql
           - database
+      run_stages:
+        description: 'Which stages to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - pums_only
+          - bls_only
+          - derived_only
+
+env:
+  PYTHON_VERSION: '3.11'
 
 jobs:
-  test:
-    name: Test Job
+  setup:
+    name: Setup
     runs-on: ubuntu-latest
+    outputs:
+      state_matrix: ${{ steps.parse.outputs.state_matrix }}
+      run_pums: ${{ steps.stages.outputs.run_pums }}
+      run_bls: ${{ steps.stages.outputs.run_bls }}
+      run_derived: ${{ steps.stages.outputs.run_derived }}
     steps:
-      - name: Echo inputs
+      - name: Parse state input
+        id: parse
         run: |
-          echo "State: ${{ github.event.inputs.test_state }}"
-          echo "Mode: ${{ github.event.inputs.test_mode }}"
-          echo "✓ GitHub Actions is working correctly!"
-          echo ""
-          echo "If you see this, your GitHub Actions setup is correct."
-          echo "The main workflow should also work."
+          # Convert comma-separated states to JSON array
+          STATES="${{ github.event.inputs.states }}"
+          STATE_ARRAY=$(echo "$STATES" | tr ',' '\n' | jq -R . | jq -s .)
+          echo "state_matrix=$STATE_ARRAY" >> $GITHUB_OUTPUT
+          echo "Processing states: $STATES"
+      
+      - name: Determine stages to run
+        id: stages
+        run: |
+          STAGES="${{ github.event.inputs.run_stages }}"
+          
+          if [ "$STAGES" == "all" ]; then
+            echo "run_pums=true" >> $GITHUB_OUTPUT
+            echo "run_bls=true" >> $GITHUB_OUTPUT
+            echo "run_derived=true" >> $GITHUB_OUTPUT
+          elif [ "$STAGES" == "pums_only" ]; then
+            echo "run_pums=true" >> $GITHUB_OUTPUT
+            echo "run_bls=false" >> $GITHUB_OUTPUT
+            echo "run_derived=false" >> $GITHUB_OUTPUT
+          elif [ "$STAGES" == "bls_only" ]; then
+            echo "run_pums=false" >> $GITHUB_OUTPUT
+            echo "run_bls=true" >> $GITHUB_OUTPUT
+            echo "run_derived=false" >> $GITHUB_OUTPUT
+          elif [ "$STAGES" == "derived_only" ]; then
+            echo "run_pums=false" >> $GITHUB_OUTPUT
+            echo "run_bls=false" >> $GITHUB_OUTPUT
+            echo "run_derived=true" >> $GITHUB_OUTPUT
+          fi
+
+  extract_pums:
+    name: Extract PUMS - ${{ matrix.state }}
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.run_pums == 'true'
+    strategy:
+      matrix:
+        state: ${{ fromJson(needs.setup.outputs.state_matrix) }}
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Cache PUMS data
+        id: cache-pums
+        uses: actions/cache@v4
+        with:
+          path: pums_cache
+          key: pums-${{ matrix.state }}-${{ github.event.inputs.pums_year }}
+          restore-keys: |
+            pums-${{ matrix.state }}-
+
+      - name: Extract PUMS distributions
+        run: |
+          if [ "${{ github.event.inputs.output_mode }}" == "database" ]; then
+            python scripts/extract_pums.py \
+              --state ${{ matrix.state }} \
+              --year ${{ github.event.inputs.pums_year }} \
+              --output database \
+              --connection-string "${{ secrets.DATABASE_URL }}"
+          else
+            python scripts/extract_pums.py \
+              --state ${{ matrix.state }} \
+              --year ${{ github.event.inputs.pums_year }} \
+              --output sql
+          fi
+
+      - name: Upload SQL artifacts
+        if: github.event.inputs.output_mode == 'sql'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pums-sql-${{ matrix.state }}-${{ github.event.inputs.pums_year }}
+          path: output/pums_distributions_${{ matrix.state }}_${{ github.event.inputs.pums_year }}.sql
+          retention-days: 90
+
+      - name: Upload PUMS cache for derived stage
+        if: needs.setup.outputs.run_derived == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pums-cache-${{ matrix.state }}-${{ github.event.inputs.pums_year }}
+          path: pums_cache/
+          retention-days: 1
+
+  extract_bls:
+    name: Extract BLS - ${{ matrix.state }}
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.run_bls == 'true'
+    strategy:
+      matrix:
+        state: ${{ fromJson(needs.setup.outputs.state_matrix) }}
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Cache BLS data
+        id: cache-bls
+        uses: actions/cache@v4
+        with:
+          path: bls_cache
+          key: bls-${{ github.event.inputs.bls_year }}
+          restore-keys: |
+            bls-
+
+      - name: Extract BLS occupation wages
+        run: |
+          if [ "${{ github.event.inputs.output_mode }}" == "database" ]; then
+            python scripts/extract_bls.py \
+              --state ${{ matrix.state }} \
+              --year ${{ github.event.inputs.bls_year }} \
+              --output database \
+              --connection-string "${{ secrets.DATABASE_URL }}"
+          else
+            python scripts/extract_bls.py \
+              --state ${{ matrix.state }} \
+              --year ${{ github.event.inputs.bls_year }} \
+              --output sql
+          fi
+
+      - name: Upload SQL artifacts
+        if: github.event.inputs.output_mode == 'sql'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bls-sql-${{ matrix.state }}-${{ github.event.inputs.bls_year }}
+          path: output/bls_occupation_wages_${{ matrix.state }}_${{ github.event.inputs.bls_year }}.sql
+          retention-days: 90
+
+      - name: Upload BLS cache for derived stage
+        if: needs.setup.outputs.run_derived == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bls-cache-${{ github.event.inputs.bls_year }}
+          path: bls_cache/
+          retention-days: 1
+
+  extract_derived:
+    name: Extract Derived - ${{ matrix.state }}
+    runs-on: ubuntu-latest
+    needs: [setup, extract_pums, extract_bls]
+    if: needs.setup.outputs.run_derived == 'true'
+    strategy:
+      matrix:
+        state: ${{ fromJson(needs.setup.outputs.state_matrix) }}
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download PUMS cache
+        uses: actions/download-artifact@v4
+        with:
+          name: pums-cache-${{ matrix.state }}-${{ github.event.inputs.pums_year }}
+          path: pums_cache/
+
+      - name: Download BLS cache
+        uses: actions/download-artifact@v4
+        with:
+          name: bls-cache-${{ github.event.inputs.bls_year }}
+          path: bls_cache/
+
+      - name: Extract derived distributions
+        run: |
+          if [ "${{ github.event.inputs.output_mode }}" == "database" ]; then
+            python scripts/extract_derived.py \
+              --state ${{ matrix.state }} \
+              --pums-year ${{ github.event.inputs.pums_year }} \
+              --bls-year ${{ github.event.inputs.bls_year }} \
+              --output database \
+              --connection-string "${{ secrets.DATABASE_URL }}"
+          else
+            python scripts/extract_derived.py \
+              --state ${{ matrix.state }} \
+              --pums-year ${{ github.event.inputs.pums_year }} \
+              --bls-year ${{ github.event.inputs.bls_year }} \
+              --output sql
+          fi
+
+      - name: Upload SQL artifacts
+        if: github.event.inputs.output_mode == 'sql'
+        uses: actions/upload-artifact@v4
+        with:
+          name: derived-sql-${{ matrix.state }}-pums${{ github.event.inputs.pums_year }}-bls${{ github.event.inputs.bls_year }}
+          path: output/derived_distributions_${{ matrix.state }}_pums_${{ github.event.inputs.pums_year }}_bls_${{ github.event.inputs.bls_year }}.sql
+          retention-days: 90
+
+  summary:
+    name: Workflow Summary
+    runs-on: ubuntu-latest
+    needs: [setup, extract_pums, extract_bls, extract_derived]
+    if: always()
+    steps:
+      - name: Generate summary
+        run: |
+          echo "# Tax Training Data Extraction Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Configuration:**" >> $GITHUB_STEP_SUMMARY
+          echo "- States: \`${{ github.event.inputs.states }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- PUMS Year: \`${{ github.event.inputs.pums_year }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- BLS Year: \`${{ github.event.inputs.bls_year }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Output Mode: \`${{ github.event.inputs.output_mode }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Stages Run: \`${{ github.event.inputs.run_stages }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "**Results:**" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.extract_pums.result }}" != "skipped" ]; then
+            echo "- PUMS Extraction: \`${{ needs.extract_pums.result }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.extract_bls.result }}" != "skipped" ]; then
+            echo "- BLS Extraction: \`${{ needs.extract_bls.result }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.extract_derived.result }}" != "skipped" ]; then
+            echo "- Derived Tables: \`${{ needs.extract_derived.result }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ github.event.inputs.output_mode }}" == "sql" ]; then
+            echo "**📦 SQL Files Available:**" >> $GITHUB_STEP_SUMMARY
+            echo "Download artifacts from the Actions run page." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**✅ Data Uploaded to Database**" >> $GITHUB_STEP_SUMMARY
+            echo "Tables are now available in your Neon PostgreSQL database." >> $GITHUB_STEP_SUMMARY
+          fi
