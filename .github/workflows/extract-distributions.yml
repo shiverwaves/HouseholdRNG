@@ -48,12 +48,10 @@ jobs:
       - name: Validate inputs
         run: |
           STATE="${{ github.event.inputs.state }}"
-          # Trim whitespace and convert to uppercase
           STATE=$(echo "$STATE" | tr -d ' ' | tr '[:lower:]' '[:upper:]')
           echo "STATE=$STATE" >> $GITHUB_ENV
           echo "Processing state: $STATE"
           
-          # Validate state code is 2 letters
           if [[ ! "$STATE" =~ ^[A-Z]{2}$ ]]; then
             echo "Error: Invalid state code '$STATE'. Must be 2 letters (e.g., HI, CA, TX)"
             exit 1
@@ -70,7 +68,11 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
+          # Install pandas first to ensure version 2.1.4+
+          pip install "pandas>=2.1.4"
           pip install -r requirements.txt
+          echo "Installed package versions:"
+          pip list | grep -E "pandas|numpy|psycopg2"
 
       - name: Cache PUMS data
         uses: actions/cache@v4
@@ -149,7 +151,10 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
+          pip install "pandas>=2.1.4"
           pip install -r requirements.txt
+          echo "Installed package versions:"
+          pip list | grep -E "pandas|numpy|openpyxl"
 
       - name: Cache BLS data
         uses: actions/cache@v4
@@ -231,7 +236,10 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
+          pip install "pandas>=2.1.4"
           pip install -r requirements.txt
+          echo "Installed package versions:"
+          pip list | grep -E "pandas|numpy|psycopg2"
 
       - name: Download PUMS cache
         if: github.event.inputs.run_stages == 'all'
