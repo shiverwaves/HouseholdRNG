@@ -365,7 +365,6 @@ def extract_occupation_se_probability(persons: pd.DataFrame, state_code: str, pu
             'se_weighted': (x['has_se_income'] * x['PWGTP']).sum(),
             'sample_count': len(x)
         }),
-        include_groups=False
     ).reset_index()
     
     occ_se['se_probability'] = (occ_se['se_weighted'] / occ_se['total_weighted'] * 100).round(2)
