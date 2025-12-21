@@ -366,7 +366,6 @@ def extract_social_security(persons: pd.DataFrame, state_code: str, year: int) -
             'weight': x['PWGTP'].sum(),
             'count': len(x)
         }),
-        include_groups=False
     ).reset_index()
     
     ss_dist['state_code'] = state_code
@@ -397,7 +396,6 @@ def extract_retirement_income(persons: pd.DataFrame, state_code: str, year: int)
             'weight': x['PWGTP'].sum(),
             'count': len(x)
         }),
-        include_groups=False
     ).reset_index()
     
     ret_dist['state_code'] = state_code
@@ -457,7 +455,6 @@ def extract_property_taxes(households: pd.DataFrame, state_code: str, year: int)
             'weight': x['WGTP'].sum(),
             'count': len(x)
         }),
-        include_groups=False
     ).reset_index()
     
     prop_tax_dist['state_code'] = state_code
@@ -492,7 +489,6 @@ def extract_mortgage_interest(households: pd.DataFrame, state_code: str, year: i
             'weight': x['WGTP'].sum(),
             'count': len(x)
         }),
-        include_groups=False
     ).reset_index()
     
     mort_int_dist['state_code'] = state_code
@@ -605,7 +601,6 @@ def extract_disability_by_age(persons: pd.DataFrame, state_code: str, year: int)
             'disabled_weighted': (x['has_disability'] * x['PWGTP']).sum(),
             'sample_count': len(x)
         }),
-        include_groups=False
     ).reset_index()
     
     dis_dist['disability_percentage'] = (dis_dist['disabled_weighted'] / dis_dist['total_weighted'] * 100).round(2)
@@ -800,7 +795,6 @@ def extract_stepchild_patterns(households: pd.DataFrame, persons: pd.DataFrame,
             'step_children': (x['RELSHIPP'] == 24).sum(),
             'total_children': len(x)
         }),
-        include_groups=False
     ).reset_index()
     
     # Only households with stepchildren
@@ -872,7 +866,6 @@ def extract_multigenerational_patterns(households: pd.DataFrame, persons: pd.Dat
             'has_parent': (x['RELSHIPP'] == 26).any(),
             'has_grandchild': (x['RELSHIPP'] == 27).any()
         }),
-        include_groups=False
     ).reset_index()
     
     # Determine number of generations
@@ -961,7 +954,6 @@ def extract_unmarried_partner_patterns(households: pd.DataFrame, persons: pd.Dat
             'has_step_children': (x['RELSHIPP'] == 24).any(),
             'has_other_adults': (x['RELSHIPP'].isin([25, 30, 34])).any()
         }),
-        include_groups=False
     ).reset_index()
     
     # Merge with household data
