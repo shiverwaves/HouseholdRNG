@@ -1,13 +1,15 @@
 version: '3.8'
 
 services:
-  # PostgreSQL database for local development
+  # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
+    container_name: household_postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: household_rng
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-household_rng}
     ports:
       - "5432:5432"
     volumes:
@@ -17,22 +19,34 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - household_network
 
-  # API server
-  api:
-    build: .
-    ports:
-      - "8000:8000"
+  # PgAdmin Database Admin UI
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: household_pgadmin
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/household_rng
-      DEBUG: "true"
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_LISTEN_PORT: 80
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ./api:/app/api
-      - ./generator:/app/generator
-    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - household_network
 
 volumes:
   postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  household_network:
+    driver: bridge
