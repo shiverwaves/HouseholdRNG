@@ -1,7 +1,64 @@
 """
-Household Generation API
+Household Generator Package
 
-Public-facing REST API for household generation.
+Generates realistic synthetic households for tax preparation training.
+Uses US Census PUMS and Bureau of Labor Statistics data.
 """
 
-__version__ = "1.0.0"
+from .pipeline import HouseholdGenerator
+from .adult_generator import AdultGenerator
+from .models import (
+    Person, 
+    Household, 
+    FilingUnit,
+    FilingStatus, 
+    EmploymentStatus, 
+    RelationshipType,
+    Race,
+    EducationLevel,
+    PATTERN_METADATA
+)
+from .database import DistributionLoader, get_loader
+from .sampler import (
+    weighted_sample, 
+    sample_from_bracket, 
+    sample_age_from_bracket,
+    match_age_bracket,
+    get_age_bracket,
+    set_random_seed
+)
+
+__version__ = "1.1.0"
+
+__all__ = [
+    # Main classes
+    'HouseholdGenerator',
+    'AdultGenerator',
+    
+    # Data models
+    'Person',
+    'Household',
+    'FilingUnit',
+    
+    # Enums
+    'FilingStatus',
+    'EmploymentStatus',
+    'RelationshipType',
+    'Race',
+    'EducationLevel',
+    
+    # Constants
+    'PATTERN_METADATA',
+    
+    # Database
+    'DistributionLoader',
+    'get_loader',
+    
+    # Sampling utilities
+    'weighted_sample',
+    'sample_from_bracket',
+    'sample_age_from_bracket',
+    'match_age_bracket',
+    'get_age_bracket',
+    'set_random_seed',
+]

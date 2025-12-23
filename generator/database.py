@@ -32,7 +32,7 @@ class DistributionLoader:
     - Derived: {table}_{state}_pums_{pums_year}_bls_{bls_year}
     """
     
-    # Tables created by extract_pums.py
+    # Tables created by extract_pums.py (original set)
     PUMS_TABLES = [
         'household_patterns',
         'employment_by_age',
@@ -50,7 +50,13 @@ class DistributionLoader:
         'adult_child_ages',
         'stepchild_patterns',
         'multigenerational_patterns',
-        'unmarried_partner_patterns'
+        'unmarried_partner_patterns',
+        # New tables for Stage 2
+        'race_distribution',
+        'race_by_age',
+        'hispanic_origin_by_age',
+        'spousal_age_gaps',
+        'couple_sex_patterns',
     ]
     
     # Tables created by extract_bls.py
@@ -118,35 +124,43 @@ class DistributionLoader:
         state_lower = state.lower()
         
         distributions = {}
+        loaded_count = 0
+        missing_count = 0
         
         # Load PUMS tables: {table}_{state}_{year}
         for table in self.PUMS_TABLES:
             full_name = f"{table}_{state_lower}_{pums_year}"
             try:
                 distributions[table] = self._load_table(full_name)
+                loaded_count += 1
                 logger.debug(f"Loaded {full_name}")
             except Exception as e:
-                logger.warning(f"Could not load {full_name}: {e}")
+                missing_count += 1
+                logger.debug(f"Could not load {full_name}: {e}")
         
         # Load BLS tables: {table}_{state}_{year}
         for table in self.BLS_TABLES:
             full_name = f"{table}_{state_lower}_{bls_year}"
             try:
                 distributions[table] = self._load_table(full_name)
+                loaded_count += 1
                 logger.debug(f"Loaded {full_name}")
             except Exception as e:
-                logger.warning(f"Could not load {full_name}: {e}")
+                missing_count += 1
+                logger.debug(f"Could not load {full_name}: {e}")
         
         # Load derived tables: {table}_{state}_pums_{pums_year}_bls_{bls_year}
         for table in self.DERIVED_TABLES:
             full_name = f"{table}_{state_lower}_pums_{pums_year}_bls_{bls_year}"
             try:
                 distributions[table] = self._load_table(full_name)
+                loaded_count += 1
                 logger.debug(f"Loaded {full_name}")
             except Exception as e:
-                logger.warning(f"Could not load {full_name}: {e}")
+                missing_count += 1
+                logger.debug(f"Could not load {full_name}: {e}")
         
-        logger.info(f"Loaded {len(distributions)} distribution tables for {state}")
+        logger.info(f"Loaded {loaded_count} tables for {state} (skipped {missing_count})")
         return distributions
     
     def _load_table(self, table_name: str) -> pd.DataFrame:
@@ -201,6 +215,11 @@ class DistributionLoader:
         state_lower = state.lower()
         pattern = f"_{state_lower}_{year}"
         return sum(1 for t in all_tables if pattern in t)
+    
+    def list_all_tables(self) -> List[str]:
+        """List all tables in database"""
+        inspector = inspect(self.engine)
+        return inspector.get_table_names()
 
 
 # Global cached loader instance

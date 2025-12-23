@@ -2,13 +2,13 @@
 Main household generation pipeline.
 
 Orchestrates the 7-stage generation process:
-1. Structure Selection
-2. Adult Generation  
-3. Child Generation
-4. Income Assignment
-5. Expense Assignment
-6. Tax Calculation
-7. Validation & Scoring
+1. Structure Selection ✅
+2. Adult Generation ✅
+3. Child Generation (TODO)
+4. Income Assignment (TODO)
+5. Expense Assignment (TODO)
+6. Tax Calculation (TODO)
+7. Validation & Scoring (TODO)
 """
 
 import logging
@@ -18,65 +18,12 @@ import uuid
 import numpy as np
 import pandas as pd
 
-from .models import Household, Person, RelationshipType
+from .models import Household, Person, RelationshipType, PATTERN_METADATA
 from .database import DistributionLoader, get_loader
 from .sampler import weighted_sample, set_random_seed
+from .adult_generator import AdultGenerator
 
 logger = logging.getLogger(__name__)
-
-
-# Pattern metadata based on PUMS household classifications
-# Pattern names must match those in extract_pums.py classify_household()
-PATTERN_METADATA = {
-    'married_couple_no_children': {
-        'expected_adults': 2,
-        'expected_children': (0, 0),
-        'complexity': 'simple',
-        'description': 'Married couple without children'
-    },
-    'married_couple_with_children': {
-        'expected_adults': 2,
-        'expected_children': (1, 5),
-        'complexity': 'simple',
-        'description': 'Married couple with children'
-    },
-    'single_parent': {
-        'expected_adults': 1,
-        'expected_children': (1, 4),
-        'complexity': 'simple',
-        'description': 'Single parent with children'
-    },
-    'single_adult': {
-        'expected_adults': 1,
-        'expected_children': (0, 0),
-        'complexity': 'simple',
-        'description': 'Single person living alone'
-    },
-    'blended_family': {
-        'expected_adults': 2,
-        'expected_children': (2, 5),
-        'complexity': 'complex',
-        'description': 'Married couple with bio and/or stepchildren'
-    },
-    'multigenerational': {
-        'expected_adults': (2, 4),
-        'expected_children': (0, 3),
-        'complexity': 'complex',
-        'description': '3+ generations in household'
-    },
-    'unmarried_partners': {
-        'expected_adults': 2,
-        'expected_children': (0, 3),
-        'complexity': 'complex',
-        'description': 'Cohabiting couple (not married)'
-    },
-    'other': {
-        'expected_adults': (1, 5),
-        'expected_children': (0, 3),
-        'complexity': 'medium',
-        'description': 'Other household arrangement'
-    }
-}
 
 
 class HouseholdGenerator:
@@ -115,10 +62,18 @@ class HouseholdGenerator:
             self.bls_year
         )
         
+        # Initialize sub-generators
+        self.adult_generator = AdultGenerator(self.distributions)
+        
         logger.info(
             f"Initialized generator for {self.state} "
             f"(PUMS {self.pums_year}, BLS {self.bls_year})"
         )
+        logger.info(f"Loaded {len(self.distributions)} distribution tables")
+    
+    # =========================================================================
+    # STAGE 1: Structure Selection
+    # =========================================================================
     
     def generate_stage1(self, complexity: Optional[str] = None) -> Household:
         """
@@ -177,6 +132,60 @@ class HouseholdGenerator:
         logger.debug(f"Stage 1: Selected pattern '{pattern_name}'")
         return household
     
+    # =========================================================================
+    # STAGE 2: Adult Generation
+    # =========================================================================
+    
+    def generate_stage2(self, household: Household) -> Household:
+        """
+        Stage 2: Generate adult household members.
+        
+        Populates household.members with adult Person objects including:
+        - Demographics (age, sex, race, hispanic origin)
+        - Employment status
+        - Education level
+        - Occupation (if employed)
+        - Disability status
+        
+        Args:
+            household: Household from Stage 1 with pattern set
+        
+        Returns:
+            Household with adult members populated
+        """
+        adults = self.adult_generator.generate_adults(household)
+        household.members = adults
+        
+        logger.debug(f"Stage 2: Generated {len(adults)} adults")
+        return household
+    
+    # =========================================================================
+    # STAGE 3: Child Generation (TODO)
+    # =========================================================================
+    
+    def generate_stage3(self, household: Household) -> Household:
+        """
+        Stage 3: Generate child household members.
+        
+        TODO: Implement child generation based on:
+        - Pattern child count expectations
+        - children_by_parent_age distribution
+        - child_age_distributions table
+        
+        Args:
+            household: Household from Stage 2 with adults
+        
+        Returns:
+            Household with children added
+        """
+        # Placeholder - will be implemented next
+        logger.debug("Stage 3: Child generation not yet implemented")
+        return household
+    
+    # =========================================================================
+    # Full Generation Pipeline
+    # =========================================================================
+    
     def generate_household(
         self, 
         complexity: Optional[str] = None,
@@ -185,8 +194,8 @@ class HouseholdGenerator:
         """
         Generate a complete household through all stages.
         
-        Currently implements Stage 1 only.
-        Stages 2-7 will be added incrementally.
+        Currently implements Stages 1-2.
+        Stages 3-7 will be added incrementally.
         
         Args:
             complexity: Filter by complexity level
@@ -201,7 +210,9 @@ class HouseholdGenerator:
         # Stage 1: Structure Selection
         household = self.generate_stage1(complexity)
         
-        # TODO: Stage 2: Adult Generation
+        # Stage 2: Adult Generation
+        household = self.generate_stage2(household)
+        
         # TODO: Stage 3: Child Generation
         # TODO: Stage 4: Income Assignment
         # TODO: Stage 5: Expense Assignment
