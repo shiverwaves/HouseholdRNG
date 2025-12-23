@@ -7,6 +7,7 @@ Uses US Census PUMS and Bureau of Labor Statistics data.
 
 from .pipeline import HouseholdGenerator
 from .adult_generator import AdultGenerator
+from .child_generator import ChildGenerator
 from .models import (
     Person, 
     Household, 
@@ -34,6 +35,7 @@ __all__ = [
     # Main classes
     'HouseholdGenerator',
     'AdultGenerator',
+    'ChildGenerator',
     
     # Data models
     'Person',

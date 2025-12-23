@@ -186,6 +186,7 @@ class Household:
     expected_adults: Optional[int] = None
     expected_children_range: Optional[Tuple[int, int]] = None
     expected_complexity: Optional[str] = None
+    multigenerational_subpattern: Optional[str] = None  # For multigenerational households
     
     # Household-level attributes (Stage 5)
     property_tax: int = 0
@@ -253,6 +254,7 @@ class Household:
             'state': self.state,
             'year': self.year,
             'pattern': self.pattern,
+            'multigenerational_subpattern': self.multigenerational_subpattern,
             'expected_adults': self.expected_adults,
             'expected_children_range': list(self.expected_children_range) if self.expected_children_range else None,
             'expected_complexity': self.expected_complexity,

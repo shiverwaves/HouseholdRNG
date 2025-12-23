@@ -96,7 +96,7 @@ class AdultGenerator:
         num_adults = self._determine_adult_count(pattern, metadata)
         
         # Step 2.2: Assign relationships
-        relationships = self._assign_relationships(pattern, num_adults)
+        relationships = self._assign_relationships(pattern, num_adults, household)
         
         # Step 2.3-2.7: Generate each adult
         adults = []
@@ -122,7 +122,7 @@ class AdultGenerator:
         
         return expected
     
-    def _assign_relationships(self, pattern: str, num_adults: int) -> List[RelationshipType]:
+    def _assign_relationships(self, pattern: str, num_adults: int, household: Household) -> List[RelationshipType]:
         """Assign relationship types to adults based on pattern"""
         
         if pattern in ['single_adult', 'single_parent']:
@@ -143,14 +143,20 @@ class AdultGenerator:
                 # Sample a sub-pattern (uses weighted_count column)
                 sub_pattern = weighted_sample(multi_patterns, 'weighted_count')['pattern']
                 
+                # Store on household for Stage 3 to use
+                household.multigenerational_subpattern = sub_pattern
+                
                 if sub_pattern == 'grandparent_with_grandchildren':
                     # Grandparent is householder, may have spouse
+                    # Grandchildren will be added in Stage 3
                     if num_adults >= 2:
                         relationships.append(RelationshipType.SPOUSE)
                 
                 elif sub_pattern == 'adult_with_parent':
                     # Adult child as householder, with parent
                     relationships.append(RelationshipType.PARENT)
+                    if num_adults >= 3:
+                        relationships.append(RelationshipType.SPOUSE)
                 
                 elif sub_pattern == 'four_generations':
                     # Complex: householder + parent + maybe spouse
@@ -159,6 +165,7 @@ class AdultGenerator:
                         relationships.append(RelationshipType.SPOUSE)
             else:
                 # Default: add parents for extra adults
+                household.multigenerational_subpattern = 'adult_with_parent'
                 for _ in range(num_adults - 1):
                     relationships.append(RelationshipType.PARENT)
             

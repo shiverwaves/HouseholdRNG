@@ -182,12 +182,13 @@ def extract_household_patterns(households: pd.DataFrame, persons: pd.DataFrame,
         unmarried_partner = row.get(33, 0)
         
         # Classify patterns
-        if hht == 1 and noc == 0:
-            return 'married_couple_no_children'
-        elif hht == 1 and noc > 0 and step_children == 0:
-            return 'married_couple_with_children'
-        elif hht == 1 and step_children > 0:
+        # Check blended family FIRST (has stepchildren)
+        if hht == 1 and step_children > 0:
             return 'blended_family'
+        elif hht == 1 and noc == 0:
+            return 'married_couple_no_children'
+        elif hht == 1 and noc > 0:
+            return 'married_couple_with_children'
         elif hht in [2, 3] and noc > 0:
             return 'single_parent'
         elif grandchildren > 0 or parents > 0:

@@ -35,6 +35,7 @@ class GenerateRequest(BaseModel):
     bls_year: Optional[int] = Field(None, description="BLS data year (default: same as pums_year)")
     count: int = Field(1, description="Number of households to generate", ge=1, le=100)
     complexity: Optional[str] = Field(None, description="Filter by complexity: simple, medium, complex")
+    pattern: Optional[str] = Field(None, description="Specific pattern to generate (e.g., 'single_parent', 'married_couple_with_children')")
     seed: Optional[int] = Field(None, description="Random seed for reproducibility")
 
 
@@ -193,6 +194,7 @@ async def generate_households(request: GenerateRequest):
         households = generator.generate_batch(
             count=request.count,
             complexity=request.complexity,
+            pattern=request.pattern,
             seed=request.seed
         )
         
@@ -236,6 +238,7 @@ async def generate_single(
     state: str = Query(..., description="Two-letter state code"),
     year: int = Query(..., description="PUMS data year"),
     complexity: Optional[str] = Query(None, description="Complexity filter"),
+    pattern: Optional[str] = Query(None, description="Specific pattern to generate"),
     seed: Optional[int] = Query(None, description="Random seed")
 ):
     """Generate a single household (GET endpoint for simple testing)"""
@@ -244,6 +247,7 @@ async def generate_single(
         pums_year=year,
         count=1,
         complexity=complexity,
+        pattern=pattern,
         seed=seed
     )
     return await generate_households(request)

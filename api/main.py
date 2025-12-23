@@ -37,6 +37,7 @@ class GenerateRequest(BaseModel):
     bls_year: Optional[int] = Field(None, description="BLS data year (default: same as pums_year)")
     count: int = Field(1, description="Number of households to generate (1-100)", ge=1, le=100)
     complexity: Optional[str] = Field(None, description="Filter by complexity: simple, medium, complex", examples=["simple"])
+    pattern: Optional[str] = Field(None, description="Specific pattern to generate (e.g., 'single_parent', 'married_couple_with_children')", examples=["married_couple_with_children"])
     seed: Optional[int] = Field(None, description="Random seed for reproducibility")
 
 
@@ -46,6 +47,7 @@ class HouseholdSummary(BaseModel):
     state: str
     year: int
     pattern: str
+    multigenerational_subpattern: Optional[str] = None
     expected_adults: Optional[int]
     expected_children_range: Optional[List[int]]
     expected_complexity: Optional[str]
@@ -289,7 +291,18 @@ async def generate_households(request: GenerateRequest):
     - **bls_year**: Year of BLS data (optional, defaults to pums_year)
     - **count**: Number of households to generate (1-100)
     - **complexity**: Filter by complexity level ('simple', 'medium', 'complex')
+    - **pattern**: Specific household pattern to generate (overrides complexity)
     - **seed**: Random seed for reproducible results
+    
+    ## Available Patterns
+    
+    - single_adult
+    - married_couple_no_children
+    - married_couple_with_children
+    - single_parent
+    - blended_family
+    - multigenerational
+    - unmarried_partners
     
     ## Response
     
@@ -305,7 +318,7 @@ async def generate_households(request: GenerateRequest):
         "state": "HI",
         "pums_year": 2023,
         "count": 5,
-        "complexity": "simple"
+        "pattern": "single_parent"
     }
     ```
     """
@@ -339,6 +352,7 @@ async def generate_households_get(
     year: int = Query(..., description="PUMS data year", examples=[2023]),
     count: int = Query(1, description="Number of households", ge=1, le=100),
     complexity: Optional[str] = Query(None, description="Complexity filter"),
+    pattern: Optional[str] = Query(None, description="Specific pattern to generate (e.g., 'single_parent', 'married_couple_with_children')"),
     seed: Optional[int] = Query(None, description="Random seed")
 ):
     """
@@ -351,6 +365,7 @@ async def generate_households_get(
         pums_year=year,
         count=count,
         complexity=complexity,
+        pattern=pattern,
         seed=seed
     )
     return await generate_households(request)
