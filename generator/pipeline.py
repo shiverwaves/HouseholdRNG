@@ -23,6 +23,7 @@ from .database import DistributionLoader, get_loader
 from .sampler import weighted_sample, set_random_seed
 from .adult_generator import AdultGenerator
 from .child_generator import ChildGenerator
+from .income_generator import IncomeGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ class HouseholdGenerator:
         # Initialize sub-generators
         self.adult_generator = AdultGenerator(self.distributions)
         self.child_generator = ChildGenerator(self.distributions)
+        self.income_generator = IncomeGenerator(self.distributions)
         
         logger.info(
             f"Initialized generator for {self.state} "
@@ -203,6 +205,41 @@ class HouseholdGenerator:
         return household
     
     # =========================================================================
+    # STAGE 4: Income Assignment
+    # =========================================================================
+    
+    def generate_stage4(self, household: Household) -> Household:
+        """
+        Stage 4: Assign income to household members.
+        
+        Assigns realistic income based on:
+        - Employment status and occupation (wages)
+        - Age (Social Security, retirement)
+        - Household income level (investment income)
+        - Means-testing (public assistance)
+        
+        Income types:
+        - Wage income (employed adults, occupation-based)
+        - Self-employment income (occupation probability)
+        - Unemployment income (unemployed adults)
+        - Social Security (62+ or disabled)
+        - Retirement income (55+)
+        - Interest & dividend income (age + income correlated)
+        - Other income (rare)
+        - Public assistance (household-level, means-tested)
+        
+        Args:
+            household: Household from Stage 3 with all members
+        
+        Returns:
+            Household with income fields populated
+        """
+        household = self.income_generator.assign_income(household)
+        
+        logger.debug(f"Stage 4: Assigned income, total: ${household.total_household_income():,}")
+        return household
+    
+    # =========================================================================
     # Full Generation Pipeline
     # =========================================================================
     
@@ -215,8 +252,8 @@ class HouseholdGenerator:
         """
         Generate a complete household through all stages.
         
-        Currently implements Stages 1-3.
-        Stages 4-7 will be added incrementally.
+        Currently implements Stages 1-4.
+        Stages 5-7 will be added incrementally.
         
         Args:
             complexity: Filter by complexity level
@@ -238,7 +275,9 @@ class HouseholdGenerator:
         # Stage 3: Child Generation
         household = self.generate_stage3(household)
         
-        # TODO: Stage 4: Income Assignment
+        # Stage 4: Income Assignment
+        household = self.generate_stage4(household)
+        
         # TODO: Stage 5: Expense Assignment
         # TODO: Stage 6: Tax Calculation
         # TODO: Stage 7: Validation & Scoring

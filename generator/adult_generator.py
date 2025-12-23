@@ -568,45 +568,55 @@ class AdultGenerator:
         if bls_wages is None or len(bls_wages) == 0:
             return None, None
         
-        # If we have education->occupation mapping, use it
-        if edu_occ is not None and len(edu_occ) > 0:
-            # Map education to table format (matches extract_derived education_map)
-            edu_mapping = {
-                'less_than_hs': 'no_hs_diploma',
-                'no_hs_diploma': 'no_hs_diploma',
-                'high_school': 'hs_graduate',
-                'hs_graduate': 'hs_graduate',
-                'some_college': 'some_college',
-                'associates': 'associates',
-                'bachelors': 'bachelors',
-                'masters': 'masters',
-                'professional': 'professional_doctorate',
-                'professional_doctorate': 'professional_doctorate',
-                'doctorate': 'professional_doctorate'
-            }
-            edu_key = edu_mapping.get(education, 'hs_graduate')
-            
-            # Get SOC major group based on education
-            filtered = edu_occ[edu_occ['education_level'] == edu_key]
-            
-            if len(filtered) > 0:
-                occ_row = weighted_sample(filtered, 'weighted_count')
-                soc_major = str(occ_row['soc_major_group'])  # Already 2-digit string
-                
-                # Get specific occupation from BLS data within this major group
-                # BLS soc_code format: "11-1021" so we match the prefix
-                bls_filtered = bls_wages[
-                    bls_wages['soc_code'].str.replace('-', '').str[:2] == soc_major
-                ]
-                
-                if len(bls_filtered) > 0:
-                    occ = weighted_sample(bls_filtered, 'employment_count')
-                    return occ['soc_code'], occ['occupation_title']
+        # Verify BLS has required columns
+        if 'soc_code' not in bls_wages.columns or 'occupation_title' not in bls_wages.columns:
+            logger.warning(f"BLS table missing required columns. Has: {list(bls_wages.columns)}")
+            return None, None
         
-        # Fallback: sample directly from BLS data (weighted by employment)
-        # This ignores education but still gives realistic occupation distribution
-        occ = weighted_sample(bls_wages, 'employment_count')
-        return occ['soc_code'], occ['occupation_title']
+        try:
+            # If we have education->occupation mapping, use it
+            if edu_occ is not None and len(edu_occ) > 0:
+                # Map education to table format (matches extract_derived education_map)
+                edu_mapping = {
+                    'less_than_hs': 'no_hs_diploma',
+                    'no_hs_diploma': 'no_hs_diploma',
+                    'high_school': 'hs_graduate',
+                    'hs_graduate': 'hs_graduate',
+                    'some_college': 'some_college',
+                    'associates': 'associates',
+                    'bachelors': 'bachelors',
+                    'masters': 'masters',
+                    'professional': 'professional_doctorate',
+                    'professional_doctorate': 'professional_doctorate',
+                    'doctorate': 'professional_doctorate'
+                }
+                edu_key = edu_mapping.get(education, 'hs_graduate')
+                
+                # Get SOC major group based on education
+                filtered = edu_occ[edu_occ['education_level'] == edu_key]
+                
+                if len(filtered) > 0:
+                    occ_row = weighted_sample(filtered, 'weighted_count')
+                    soc_major = str(occ_row['soc_major_group'])  # Already 2-digit string
+                    
+                    # Get specific occupation from BLS data within this major group
+                    # BLS soc_code format: "11-1021" so we match the prefix
+                    bls_filtered = bls_wages[
+                        bls_wages['soc_code'].astype(str).str.replace('-', '').str[:2] == soc_major
+                    ]
+                    
+                    if len(bls_filtered) > 0:
+                        occ = weighted_sample(bls_filtered, 'employment_count')
+                        return str(occ['soc_code']), str(occ['occupation_title'])
+            
+            # Fallback: sample directly from BLS data (weighted by employment)
+            # This ignores education but still gives realistic occupation distribution
+            occ = weighted_sample(bls_wages, 'employment_count')
+            return str(occ['soc_code']), str(occ['occupation_title'])
+        
+        except Exception as e:
+            logger.warning(f"Error sampling occupation for education '{education}': {e}")
+            return None, None
     
     # =========================================================================
     # Helper methods
