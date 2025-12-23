@@ -21,21 +21,21 @@ class FilingStatus(Enum):
 
 class EmploymentStatus(Enum):
     """Employment status from PUMS ESR variable"""
-    EMPLOYED = "employed"                     # ESR 1-2
-    UNEMPLOYED = "unemployed"                 # ESR 3
-    NOT_IN_LABOR_FORCE = "not_in_labor_force" # ESR 6
+    EMPLOYED = "employed"
+    UNEMPLOYED = "unemployed"
+    NOT_IN_LABOR_FORCE = "not_in_labor_force"
 
 
 class RelationshipType(Enum):
     """Relationship to householder (PUMS RELSHIPP)"""
-    HOUSEHOLDER = "householder"               # RELSHIPP 20
-    SPOUSE = "spouse"                         # RELSHIPP 21
-    BIOLOGICAL_CHILD = "biological_child"     # RELSHIPP 22
-    ADOPTED_CHILD = "adopted_child"           # RELSHIPP 23
-    STEPCHILD = "stepchild"                   # RELSHIPP 24
-    GRANDCHILD = "grandchild"                 # RELSHIPP 27
-    PARENT = "parent"                         # RELSHIPP 26
-    UNMARRIED_PARTNER = "unmarried_partner"   # RELSHIPP 33
+    HOUSEHOLDER = "householder"
+    SPOUSE = "spouse"
+    BIOLOGICAL_CHILD = "biological_child"
+    ADOPTED_CHILD = "adopted_child"
+    STEPCHILD = "stepchild"
+    GRANDCHILD = "grandchild"
+    PARENT = "parent"
+    UNMARRIED_PARTNER = "unmarried_partner"
 
 
 @dataclass
@@ -49,7 +49,7 @@ class Person:
     # Employment & Education (from Stage 2)
     employment_status: Optional[EmploymentStatus] = None
     education_level: Optional[str] = None
-    occupation: Optional[str] = None  # SOC code
+    occupation: Optional[str] = None
     
     # Income (from Stage 4)
     wage_income: int = 0
@@ -57,7 +57,7 @@ class Person:
     social_security_income: int = 0
     retirement_income: int = 0
     interest_dividend_income: int = 0
-    other_income: int = 0  # Unemployment, alimony
+    other_income: int = 0
     
     # Tax-relevant attributes
     has_disability: bool = False
@@ -78,6 +78,27 @@ class Person:
             self.interest_dividend_income +
             self.other_income
         )
+    
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON serialization"""
+        return {
+            "person_id": self.person_id,
+            "relationship": self.relationship.value,
+            "age": self.age,
+            "sex": self.sex,
+            "employment_status": self.employment_status.value if self.employment_status else None,
+            "education_level": self.education_level,
+            "occupation": self.occupation,
+            "wage_income": self.wage_income,
+            "self_employment_income": self.self_employment_income,
+            "social_security_income": self.social_security_income,
+            "retirement_income": self.retirement_income,
+            "interest_dividend_income": self.interest_dividend_income,
+            "other_income": self.other_income,
+            "total_income": self.total_income(),
+            "has_disability": self.has_disability,
+            "is_student": self.is_student,
+        }
 
 
 @dataclass
@@ -88,11 +109,11 @@ class Household:
     year: int
     
     # Structure (from Stage 1)
-    pattern: str  # e.g., 'married_couple_with_children'
+    pattern: str
     members: List[Person] = field(default_factory=list)
     
     # Housing (from Stage 5)
-    tenure: Optional[str] = None  # 'owned_mortgage', 'owned_free', 'rented'
+    tenure: Optional[str] = None
     property_taxes: int = 0
     mortgage_interest: int = 0
     
@@ -116,21 +137,43 @@ class Household:
         """Return all children (<18)"""
         return [p for p in self.members if p.age < 18]
     
-    def get_householder(self) -> Person:
+    def get_householder(self) -> Optional[Person]:
         """Return the householder"""
-        return next(p for p in self.members 
-                   if p.relationship == RelationshipType.HOUSEHOLDER)
+        for p in self.members:
+            if p.relationship == RelationshipType.HOUSEHOLDER:
+                return p
+        return None
     
     def total_household_income(self) -> int:
         """Calculate total household income"""
         return sum(p.total_income() for p in self.members)
+    
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON serialization"""
+        return {
+            "household_id": self.household_id,
+            "state": self.state,
+            "year": self.year,
+            "pattern": self.pattern,
+            "members": [m.to_dict() for m in self.members],
+            "tenure": self.tenure,
+            "property_taxes": self.property_taxes,
+            "mortgage_interest": self.mortgage_interest,
+            "complexity_score": self.complexity_score,
+            "complexity_factors": self.complexity_factors,
+            "expected_adults": self.expected_adults,
+            "expected_children_range": list(self.expected_children_range) if self.expected_children_range else None,
+            "expected_complexity": self.expected_complexity,
+            "total_household_income": self.total_household_income(),
+            "adult_count": len(self.get_adults()),
+            "child_count": len(self.get_children()),
+        }
 
 
 @dataclass
 class FilingUnit:
     """
     Represents a tax filing unit within a household.
-    Some households have multiple filing units (e.g., unmarried partners).
     """
     filing_unit_id: str
     filing_status: FilingStatus
@@ -145,10 +188,10 @@ class FilingUnit:
     total_credits: int = 0
     
     # Tax forms needed
-    requires_schedule_a: bool = False  # Itemized deductions
-    requires_schedule_b: bool = False  # Interest/dividends
-    requires_schedule_c: bool = False  # Self-employment
-    requires_schedule_se: bool = False  # SE tax
+    requires_schedule_a: bool = False
+    requires_schedule_b: bool = False
+    requires_schedule_c: bool = False
+    requires_schedule_se: bool = False
     
     def calculate_agi(self) -> int:
         """Calculate Adjusted Gross Income"""
@@ -156,3 +199,16 @@ class FilingUnit:
         if self.spouse:
             agi += self.spouse.total_income()
         return agi
+    
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON serialization"""
+        return {
+            "filing_unit_id": self.filing_unit_id,
+            "filing_status": self.filing_status.value,
+            "primary_taxpayer_id": self.primary_taxpayer.person_id,
+            "spouse_id": self.spouse.person_id if self.spouse else None,
+            "dependent_ids": [d.person_id for d in self.dependents],
+            "total_wages": self.total_wages,
+            "total_income": self.total_income,
+            "agi": self.calculate_agi(),
+        }

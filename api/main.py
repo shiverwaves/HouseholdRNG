@@ -1,139 +1,365 @@
 """
-FastAPI Main Application
+Household Generation API Server
 
-REST API for household generation system.
+Public-facing REST API that proxies requests to the generator worker.
 """
 
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from contextlib import asynccontextmanager
+import os
 import logging
+from typing import List, Optional
+from datetime import datetime
+from contextlib import asynccontextmanager
 
-from .config import get_settings
-from .routers import health, households
-from .models import ErrorResponse
-
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+import httpx
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=os.getenv('LOG_LEVEL', 'INFO'),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
+# Worker service URL
+WORKER_URL = os.getenv('WORKER_URL', 'http://worker:8001')
+
+
+# ============================================
+# Pydantic Models
+# ============================================
+
+class GenerateRequest(BaseModel):
+    """Request to generate households"""
+    state: str = Field(..., description="Two-letter state code (e.g., 'HI')", min_length=2, max_length=2, examples=["HI"])
+    pums_year: int = Field(..., description="PUMS data year", ge=2018, le=2025, examples=[2023])
+    bls_year: Optional[int] = Field(None, description="BLS data year (default: same as pums_year)")
+    count: int = Field(1, description="Number of households to generate (1-100)", ge=1, le=100)
+    complexity: Optional[str] = Field(None, description="Filter by complexity: simple, medium, complex", examples=["simple"])
+    seed: Optional[int] = Field(None, description="Random seed for reproducibility")
+
+
+class HouseholdSummary(BaseModel):
+    """Summary of a generated household"""
+    household_id: str
+    state: str
+    year: int
+    pattern: str
+    expected_adults: Optional[int]
+    expected_children_range: Optional[List[int]]
+    expected_complexity: Optional[str]
+    members: List[dict] = []
+    total_household_income: int = 0
+    adult_count: int = 0
+    child_count: int = 0
+
+
+class GenerateResponse(BaseModel):
+    """Response from generation endpoint"""
+    success: bool
+    message: str
+    count: int
+    state: str
+    year: int
+    seed: Optional[int]
+    generated_at: datetime
+    households: List[HouseholdSummary]
+
+
+class HealthResponse(BaseModel):
+    """Health check response"""
+    status: str
+    api_version: str
+    worker_status: str
+    worker_url: str
+    timestamp: datetime
+
+
+class StateInfo(BaseModel):
+    """Available state information"""
+    state: str
+    years: List[int]
+
+
+class StatesResponse(BaseModel):
+    """Response listing available states"""
+    success: bool
+    states: List[StateInfo]
+    count: int
+
+
+# ============================================
+# Application Lifespan
+# ============================================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Lifespan context manager for startup and shutdown events.
-    """
-    # Startup
-    settings = get_settings()
-    logger.info(f"Starting {settings.app_name} v{settings.app_version}")
-    logger.info(f"Debug mode: {settings.debug}")
-    
-    # Verify database connection
-    try:
-        from .dependencies import get_distribution_loader
-        loader = get_distribution_loader(settings)
-        states = loader.list_available_states_years()
-        logger.info(f"Database connected - {len(states)} states available")
-    except Exception as e:
-        logger.error(f"Failed to connect to database: {e}")
-        raise
+    """Application startup and shutdown"""
+    logger.info("Starting Household Generation API")
+    logger.info(f"Worker URL: {WORKER_URL}")
     
     yield
     
-    # Shutdown
-    logger.info("Shutting down application")
+    logger.info("Shutting down Household Generation API")
 
 
-# Create FastAPI application
-settings = get_settings()
+# ============================================
+# FastAPI Application
+# ============================================
+
 app = FastAPI(
-    title=settings.app_name,
-    version=settings.app_version,
+    title="Household Generation API",
     description="""
-    REST API for generating realistic household tax scenarios.
+    Generate realistic synthetic households for tax preparation training.
     
-    ## Features
+    ## Overview
     
-    - Generate households based on US Census PUMS distributions
-    - Filter by complexity level (simple, medium, complex)
-    - Support for all 50+ US states
-    - Reproducible generation with random seeds
+    This API generates synthetic household data based on US Census PUMS 
+    (Public Use Microdata Sample) and Bureau of Labor Statistics data.
     
-    ## Current Status
+    ## Endpoints
     
-    **Stage 1 Complete**: Household structure selection
+    - **POST /api/v1/households/generate** - Generate multiple households
+    - **GET /api/v1/states** - List available states and years
+    - **GET /api/v1/patterns/{state}/{year}** - Get pattern distribution for a state
+    - **GET /health** - Health check
     
-    Upcoming stages:
-    - Stage 2: Adult member generation
-    - Stage 3: Child member generation  
-    - Stage 4: Occupation & income assignment
-    - Stage 5: Tax-relevant expenses
-    - Stage 6: Tax calculation & filing units
-    - Stage 7: Validation & complexity scoring
+    ## Usage Example
     
-    ## Usage
+    ```python
+    import requests
     
-    See the `/docs` endpoint for interactive API documentation.
+    response = requests.post(
+        'http://localhost:8000/api/v1/households/generate',
+        json={
+            'state': 'HI',
+            'pums_year': 2023,
+            'count': 5,
+            'complexity': 'simple'
+        }
+    )
+    households = response.json()['households']
+    ```
     """,
-    lifespan=lifespan,
-    debug=settings.debug
+    version="1.0.0",
+    lifespan=lifespan
 )
 
-
-# Add CORS middleware
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(','),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-# Custom exception handler
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    """Global exception handler for uncaught exceptions"""
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+# ============================================
+# Helper Functions
+# ============================================
+
+async def call_worker(endpoint: str, method: str = "GET", json_data: dict = None) -> dict:
+    """Call the worker service"""
+    url = f"{WORKER_URL}{endpoint}"
     
-    return JSONResponse(
-        status_code=500,
-        content=ErrorResponse(
-            detail=f"Internal server error: {str(exc)}",
-            status_code=500
-        ).dict()
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            if method == "POST":
+                response = await client.post(url, json=json_data)
+            else:
+                response = await client.get(url)
+            
+            response.raise_for_status()
+            return response.json()
+        
+        except httpx.ConnectError:
+            raise HTTPException(
+                status_code=503,
+                detail="Generator worker service unavailable"
+            )
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=e.response.json().get('detail', str(e))
+            )
+        except Exception as e:
+            logger.error(f"Worker call failed: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# Health Endpoints
+# ============================================
+
+@app.get("/health", response_model=HealthResponse, tags=["Health"])
+async def health_check():
+    """
+    Health check endpoint.
+    
+    Returns API status and worker service connectivity.
+    """
+    worker_status = "unknown"
+    
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{WORKER_URL}/health")
+            if response.status_code == 200:
+                worker_data = response.json()
+                worker_status = worker_data.get('status', 'healthy')
+            else:
+                worker_status = "unhealthy"
+    except Exception:
+        worker_status = "unavailable"
+    
+    return HealthResponse(
+        status="healthy" if worker_status in ["healthy", "unknown"] else "degraded",
+        api_version="1.0.0",
+        worker_status=worker_status,
+        worker_url=WORKER_URL,
+        timestamp=datetime.utcnow()
     )
 
 
-# Include routers
-app.include_router(health.router)
-app.include_router(households.router)
-
-
-# Root endpoint
-@app.get("/", tags=["root"])
+@app.get("/", tags=["Health"])
 async def root():
-    """
-    Root endpoint - API information.
-    """
+    """API information"""
     return {
-        "name": settings.app_name,
-        "version": settings.app_version,
+        "name": "Household Generation API",
+        "version": "1.0.0",
         "docs": "/docs",
-        "redoc": "/redoc",
-        "health": "/api/v1/health",
-        "available_states": "/api/v1/available-states",
-        "generate": "/api/v1/households/generate"
+        "health": "/health",
+        "endpoints": {
+            "generate": "POST /api/v1/households/generate",
+            "states": "GET /api/v1/states",
+            "patterns": "GET /api/v1/patterns/{state}/{year}"
+        }
     }
 
 
-# Health check at root level (for load balancers)
-@app.get("/health", include_in_schema=False)
-async def root_health():
-    """Simple health check for load balancers"""
-    return {"status": "ok"}
+# ============================================
+# State & Pattern Endpoints
+# ============================================
+
+@app.get("/api/v1/states", response_model=StatesResponse, tags=["Configuration"])
+async def list_available_states():
+    """
+    List available states and years.
+    
+    Returns all state/year combinations that have data loaded.
+    """
+    data = await call_worker("/states")
+    
+    states_list = [
+        StateInfo(state=state, years=years)
+        for state, years in data.get('states', {}).items()
+    ]
+    
+    return StatesResponse(
+        success=True,
+        states=sorted(states_list, key=lambda x: x.state),
+        count=len(states_list)
+    )
+
+
+@app.get("/api/v1/patterns/{state}/{year}", tags=["Configuration"])
+async def get_patterns(state: str, year: int):
+    """
+    Get household patterns for a state/year.
+    
+    Returns distribution of household patterns with probabilities.
+    """
+    return await call_worker(f"/patterns/{state.upper()}/{year}")
+
+
+# ============================================
+# Generation Endpoints
+# ============================================
+
+@app.post("/api/v1/households/generate", response_model=GenerateResponse, tags=["Generation"])
+async def generate_households(request: GenerateRequest):
+    """
+    Generate synthetic households.
+    
+    ## Parameters
+    
+    - **state**: Two-letter state code (e.g., 'HI', 'CA', 'TX')
+    - **pums_year**: Year of PUMS data to use (2018-2025)
+    - **bls_year**: Year of BLS data (optional, defaults to pums_year)
+    - **count**: Number of households to generate (1-100)
+    - **complexity**: Filter by complexity level ('simple', 'medium', 'complex')
+    - **seed**: Random seed for reproducible results
+    
+    ## Response
+    
+    Returns a list of generated households with:
+    - Household pattern (e.g., 'married_couple_with_children')
+    - Expected composition (adults, children)
+    - Complexity level
+    
+    ## Example
+    
+    ```json
+    {
+        "state": "HI",
+        "pums_year": 2023,
+        "count": 5,
+        "complexity": "simple"
+    }
+    ```
+    """
+    # Call worker service
+    worker_response = await call_worker(
+        "/generate",
+        method="POST",
+        json_data=request.model_dump()
+    )
+    
+    # Transform response
+    households = [
+        HouseholdSummary(**h) for h in worker_response.get('households', [])
+    ]
+    
+    return GenerateResponse(
+        success=True,
+        message=f"Generated {len(households)} households",
+        count=len(households),
+        state=request.state.upper(),
+        year=request.pums_year,
+        seed=request.seed,
+        generated_at=datetime.utcnow(),
+        households=households
+    )
+
+
+@app.get("/api/v1/households/generate", tags=["Generation"])
+async def generate_households_get(
+    state: str = Query(..., description="Two-letter state code", examples=["HI"]),
+    year: int = Query(..., description="PUMS data year", examples=[2023]),
+    count: int = Query(1, description="Number of households", ge=1, le=100),
+    complexity: Optional[str] = Query(None, description="Complexity filter"),
+    seed: Optional[int] = Query(None, description="Random seed")
+):
+    """
+    Generate households (GET endpoint).
+    
+    Simpler GET version for quick testing.
+    """
+    request = GenerateRequest(
+        state=state,
+        pums_year=year,
+        count=count,
+        complexity=complexity,
+        seed=seed
+    )
+    return await generate_households(request)
+
+
+# ============================================
+# Run with: uvicorn api.main:app --port 8000
+# ============================================
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

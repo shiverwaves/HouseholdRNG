@@ -1,6 +1,10 @@
 version: '3.8'
 
 services:
+  # ============================================
+  # Infrastructure Layer
+  # ============================================
+  
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
@@ -38,6 +42,55 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - household_network
+
+  # ============================================
+  # Application Layer
+  # ============================================
+
+  # FastAPI Server (Public API)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: household_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-household_rng}
+      WORKER_URL: http://worker:8001
+      DEBUG: ${DEBUG:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      worker:
+        condition: service_started
+    volumes:
+      - ./api:/app/api
+    networks:
+      - household_network
+
+  # Household Generator Worker (Internal Service)
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: household_worker
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-household_rng}
+      DEBUG: ${DEBUG:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./generator:/app/generator
     networks:
       - household_network
 

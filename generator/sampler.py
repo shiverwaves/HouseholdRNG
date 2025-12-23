@@ -9,43 +9,42 @@ import pandas as pd
 from typing import Union
 
 
-def weighted_sample(df: pd.DataFrame, weight_col: str = 'weighted_count') -> pd.Series:
+def weighted_sample(
+    df: pd.DataFrame, 
+    weight_col: str = 'weighted_count',
+    n: int = 1
+) -> Union[pd.Series, pd.DataFrame]:
     """
-    Sample one row from a DataFrame using weighted probabilities.
+    Sample rows from a DataFrame using weighted probabilities.
     
     Args:
         df: DataFrame with distribution data
         weight_col: Column containing weights (population counts)
+        n: Number of samples to draw
     
     Returns:
-        Single row as Series
-    
-    Example:
-        >>> patterns = pd.DataFrame({
-        ...     'pattern': ['A', 'B', 'C'],
-        ...     'weighted_count': [100, 200, 700]
-        ... })
-        >>> row = weighted_sample(patterns)
-        >>> row['pattern']  # More likely to be 'C' (70% probability)
+        Single row as Series (if n=1) or DataFrame (if n>1)
     """
     if len(df) == 0:
         raise ValueError("Cannot sample from empty DataFrame")
     
     if weight_col not in df.columns:
-        raise ValueError(f"Weight column '{weight_col}' not found in DataFrame")
+        raise ValueError(f"Weight column '{weight_col}' not found")
     
-    weights = df[weight_col].values
+    weights = df[weight_col].values.astype(float)
     
-    # Handle edge cases
     if weights.sum() == 0:
         raise ValueError("All weights are zero - cannot sample")
     
-    # Calculate probabilities
+    # Normalize to probabilities
     probs = weights / weights.sum()
     
-    # Sample
-    idx = np.random.choice(len(df), p=probs)
-    return df.iloc[idx]
+    # Sample indices
+    indices = np.random.choice(len(df), size=n, p=probs, replace=True)
+    
+    if n == 1:
+        return df.iloc[indices[0]]
+    return df.iloc[indices]
 
 
 def sample_from_bracket(bracket_str: str) -> int:
@@ -57,40 +56,29 @@ def sample_from_bracket(bracket_str: str) -> int:
     
     Returns:
         Random value within the bracket range
-    
-    Examples:
-        >>> sample_from_bracket("<$25K")
-        12450  # Random value between 0 and 25,000
-        
-        >>> sample_from_bracket("$25-50K")
-        37800  # Random value between 25,000 and 50,000
-        
-        >>> sample_from_bracket("$200K+")
-        245000  # Random value >= 200,000 (exponential distribution)
     """
-    bracket_str = bracket_str.strip()
+    bracket_str = str(bracket_str).strip()
     
     # Less than (e.g., "<$25K")
     if bracket_str.startswith('<'):
         max_val = parse_dollar_amount(bracket_str[1:])
-        return np.random.randint(0, max_val + 1)
+        return np.random.randint(0, max(1, max_val))
     
     # Greater than (e.g., "$200K+")
-    elif bracket_str.endswith('+'):
+    if bracket_str.endswith('+'):
         min_val = parse_dollar_amount(bracket_str[:-1])
-        # Use exponential distribution with mean of 50K above minimum
+        # Exponential distribution with mean 50K above minimum
         return min_val + int(np.random.exponential(50000))
     
     # Range (e.g., "$25-50K")
-    elif '-' in bracket_str:
+    if '-' in bracket_str:
         parts = bracket_str.split('-')
         min_val = parse_dollar_amount(parts[0])
         max_val = parse_dollar_amount(parts[1])
-        return np.random.randint(min_val, max_val + 1)
+        return np.random.randint(min_val, max(min_val + 1, max_val))
     
-    # Single value (e.g., "$25K")
-    else:
-        return parse_dollar_amount(bracket_str)
+    # Single value
+    return parse_dollar_amount(bracket_str)
 
 
 def parse_dollar_amount(s: str) -> int:
@@ -102,47 +90,40 @@ def parse_dollar_amount(s: str) -> int:
     
     Returns:
         Integer dollar amount
-    
-    Examples:
-        >>> parse_dollar_amount("$25K")
-        25000
-        >>> parse_dollar_amount("$1.5M")
-        1500000
-        >>> parse_dollar_amount("$5000")
-        5000
     """
-    s = s.replace('$', '').replace(',', '').strip()
+    s = str(s).replace('$', '').replace(',', '').strip()
     
-    if s.endswith('K'):
+    if not s:
+        return 0
+    
+    if s.upper().endswith('K'):
         return int(float(s[:-1]) * 1000)
-    elif s.endswith('M'):
+    if s.upper().endswith('M'):
         return int(float(s[:-1]) * 1000000)
-    else:
+    
+    try:
         return int(float(s))
+    except ValueError:
+        return 0
 
 
-def get_age_bracket(age: int, distribution_df: pd.DataFrame) -> str:
+def get_age_bracket(age: int, brackets: list) -> str:
     """
     Find which age bracket an age falls into.
     
     Args:
         age: Person's age
-        distribution_df: DataFrame with 'age_bracket' column
+        brackets: List of bracket strings (e.g., ['18-24', '25-34', '35-44'])
     
     Returns:
-        Age bracket string (e.g., '25-29')
-    
-    Example:
-        >>> df = pd.DataFrame({'age_bracket': ['18-24', '25-29', '30-34']})
-        >>> get_age_bracket(27, df)
-        '25-29'
+        Matching bracket string
     """
-    for bracket in distribution_df['age_bracket'].unique():
+    for bracket in brackets:
         if match_age_bracket(age, bracket):
             return bracket
     
-    # Fallback: return closest bracket
-    return distribution_df['age_bracket'].iloc[0]
+    # Return closest bracket if no match
+    return brackets[-1] if brackets else '18-24'
 
 
 def match_age_bracket(age: int, bracket: str) -> bool:
@@ -156,23 +137,80 @@ def match_age_bracket(age: int, bracket: str) -> bool:
     Returns:
         True if age is in bracket
     """
-    bracket = bracket.strip()
+    bracket = str(bracket).strip()
     
     # Less than (e.g., '<18')
     if bracket.startswith('<'):
-        max_age = int(bracket[1:])
-        return age < max_age
+        try:
+            max_age = int(bracket[1:])
+            return age < max_age
+        except ValueError:
+            return False
     
     # Greater than or equal (e.g., '75+')
-    elif bracket.endswith('+'):
-        min_age = int(bracket[:-1])
-        return age >= min_age
+    if bracket.endswith('+'):
+        try:
+            min_age = int(bracket[:-1])
+            return age >= min_age
+        except ValueError:
+            return False
     
     # Range (e.g., '25-29')
-    elif '-' in bracket:
+    if '-' in bracket:
+        try:
+            parts = bracket.split('-')
+            min_age = int(parts[0])
+            max_age = int(parts[1])
+            return min_age <= age <= max_age
+        except (ValueError, IndexError):
+            return False
+    
+    # Single value
+    try:
+        return age == int(bracket)
+    except ValueError:
+        return False
+
+
+def sample_age_from_bracket(bracket: str) -> int:
+    """
+    Sample an age from an age bracket.
+    
+    Args:
+        bracket: Age bracket string (e.g., '25-34', '65+', '<18')
+    
+    Returns:
+        Random age within bracket
+    """
+    bracket = str(bracket).strip()
+    
+    # Less than
+    if bracket.startswith('<'):
+        max_age = int(bracket[1:])
+        return np.random.randint(0, max_age)
+    
+    # Greater than or equal
+    if bracket.endswith('+'):
+        min_age = int(bracket[:-1])
+        # Sample with decreasing probability as age increases
+        return min_age + int(np.random.exponential(10))
+    
+    # Range
+    if '-' in bracket:
         parts = bracket.split('-')
         min_age = int(parts[0])
         max_age = int(parts[1])
-        return min_age <= age <= max_age
+        return np.random.randint(min_age, max_age + 1)
     
-    return False
+    # Single value
+    return int(bracket)
+
+
+def set_random_seed(seed: int) -> None:
+    """
+    Set random seed for reproducibility.
+    
+    Args:
+        seed: Random seed value
+    """
+    np.random.seed(seed)

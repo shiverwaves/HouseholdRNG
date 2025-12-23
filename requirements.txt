@@ -1,15 +1,36 @@
-# Requirements for HouseholdRNG Data Pipeline
-# Minimal setup for running extract scripts with Docker PostgreSQL
+# HouseholdRNG Requirements
 # Python 3.9+
 
+# ============================================
 # Core Data Processing
-pandas>=2.0.0,<3.0.0          # Data manipulation and analysis
-numpy>=1.24.0,<2.0.0          # Numerical computing
+# ============================================
+pandas>=2.0.0
+numpy>=1.24.0
 
-# Database Connection
-sqlalchemy>=2.0.0,<3.0.0      # Database ORM and connection management
-psycopg2-binary>=2.9.0,<3.0.0 # PostgreSQL adapter for Python
+# ============================================
+# Database
+# ============================================
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
 
-# Data Download & File Processing
-requests>=2.31.0,<3.0.0       # HTTP library for downloading Census/BLS data
-openpyxl>=3.1.0,<4.0.0        # Excel file handling (BLS OEWS data)
+# ============================================
+# Web Framework (API & Worker)
+# ============================================
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+httpx>=0.25.0
+
+# ============================================
+# Data Download & Processing
+# ============================================
+requests>=2.31.0
+openpyxl>=3.1.0
+
+# ============================================
+# Development & Testing
+# ============================================
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+
