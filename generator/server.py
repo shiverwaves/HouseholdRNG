@@ -45,6 +45,7 @@ class HouseholdResponse(BaseModel):
     state: str
     year: int
     pattern: str
+    multigenerational_subpattern: Optional[str] = None
     expected_adults: Optional[int]
     expected_children_range: Optional[List[int]]
     expected_complexity: Optional[str]
@@ -52,6 +53,24 @@ class HouseholdResponse(BaseModel):
     total_household_income: int = 0
     adult_count: int = 0
     child_count: int = 0
+    is_married: bool = False
+    
+    # Expenses (Stage 5)
+    property_taxes: int = 0
+    mortgage_interest: int = 0
+    state_income_tax: int = 0
+    medical_expenses: int = 0
+    charitable_contributions: int = 0
+    student_loan_interest: int = 0
+    educator_expenses: int = 0
+    ira_contributions: int = 0
+    child_care_expenses: int = 0
+    education_expenses: int = 0
+    total_itemized_deductions: int = 0
+    total_above_line_deductions: int = 0
+    
+    # Validation
+    validation_score: Optional[float] = None
 
 
 class GenerateResponse(BaseModel):
@@ -206,13 +225,29 @@ async def generate_households(request: GenerateRequest):
                 state=h.state,
                 year=h.year,
                 pattern=h.pattern,
+                multigenerational_subpattern=h.multigenerational_subpattern,
                 expected_adults=h.expected_adults,
                 expected_children_range=list(h.expected_children_range) if h.expected_children_range else None,
                 expected_complexity=h.expected_complexity,
                 members=[m.to_dict() for m in h.members],
                 total_household_income=h.total_household_income(),
                 adult_count=len(h.get_adults()),
-                child_count=len(h.get_children())
+                child_count=len(h.get_children()),
+                is_married=h.is_married(),
+                # Expenses (Stage 5)
+                property_taxes=h.property_taxes,
+                mortgage_interest=h.mortgage_interest,
+                state_income_tax=h.state_income_tax,
+                medical_expenses=h.medical_expenses,
+                charitable_contributions=h.charitable_contributions,
+                student_loan_interest=h.student_loan_interest,
+                educator_expenses=h.educator_expenses,
+                ira_contributions=h.ira_contributions,
+                child_care_expenses=h.child_care_expenses,
+                education_expenses=h.education_expenses,
+                total_itemized_deductions=h.total_itemized_deductions,
+                total_above_line_deductions=h.total_above_line_deductions,
+                validation_score=h.validation_score
             ))
         
         logger.info(f"Generated {len(households)} households for {request.state}")

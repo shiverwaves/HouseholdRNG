@@ -55,6 +55,24 @@ class HouseholdSummary(BaseModel):
     total_household_income: int = 0
     adult_count: int = 0
     child_count: int = 0
+    is_married: bool = False
+    
+    # Expenses (Stage 5)
+    property_taxes: int = 0
+    mortgage_interest: int = 0
+    state_income_tax: int = 0
+    medical_expenses: int = 0
+    charitable_contributions: int = 0
+    student_loan_interest: int = 0
+    educator_expenses: int = 0
+    ira_contributions: int = 0
+    child_care_expenses: int = 0
+    education_expenses: int = 0
+    total_itemized_deductions: int = 0
+    total_above_line_deductions: int = 0
+    
+    # Validation
+    validation_score: Optional[float] = None
 
 
 class GenerateResponse(BaseModel):

@@ -43,6 +43,7 @@ class DistributionLoader:
         'interest_and_dividend_income',
         'property_taxes',
         'mortgage_interest',
+        'homeownership_rates',
         'education_by_age',
         'disability_by_age',
         'other_income_by_employment_status',
@@ -150,15 +151,22 @@ class DistributionLoader:
                 logger.debug(f"Could not load {full_name}: {e}")
         
         # Load derived tables: {table}_{state}_pums_{pums_year}_bls_{bls_year}
+        # Try both lowercase and uppercase state codes (extract_derived.py uses uppercase)
         for table in self.DERIVED_TABLES:
-            full_name = f"{table}_{state_lower}_pums_{pums_year}_bls_{bls_year}"
-            try:
-                distributions[table] = self._load_table(full_name)
-                loaded_count += 1
-                logger.debug(f"Loaded {full_name}")
-            except Exception as e:
+            loaded = False
+            for state_variant in [state_lower, state.upper()]:
+                full_name = f"{table}_{state_variant}_pums_{pums_year}_bls_{bls_year}"
+                try:
+                    distributions[table] = self._load_table(full_name)
+                    loaded_count += 1
+                    loaded = True
+                    logger.debug(f"Loaded {full_name}")
+                    break
+                except Exception:
+                    continue
+            if not loaded:
                 missing_count += 1
-                logger.debug(f"Could not load {full_name}: {e}")
+                logger.debug(f"Could not load {table} for {state}")
         
         logger.info(f"Loaded {loaded_count} tables for {state} (skipped {missing_count})")
         return distributions

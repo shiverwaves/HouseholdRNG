@@ -9,6 +9,7 @@ from .pipeline import HouseholdGenerator
 from .adult_generator import AdultGenerator
 from .child_generator import ChildGenerator
 from .income_generator import IncomeGenerator
+from .expense_generator import ExpenseGenerator
 from .models import (
     Person, 
     Household, 
@@ -38,6 +39,7 @@ __all__ = [
     'AdultGenerator',
     'ChildGenerator',
     'IncomeGenerator',
+    'ExpenseGenerator',
     
     # Data models
     'Person',

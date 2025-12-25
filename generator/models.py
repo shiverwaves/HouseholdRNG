@@ -105,6 +105,11 @@ class Person:
     is_dependent: bool = False
     can_be_claimed: bool = False
     
+    # Expenses (Stage 5) - person-level
+    student_loan_interest: int = 0
+    educator_expenses: int = 0
+    ira_contributions: int = 0
+    
     def total_income(self) -> int:
         """Calculate total income from all sources"""
         return (
@@ -158,7 +163,11 @@ class Person:
             'public_assistance_income': self.public_assistance_income,
             'total_income': self.total_income(),
             'is_adult': self.is_adult(),
-            'is_dependent': self.is_dependent
+            'is_dependent': self.is_dependent,
+            # Expenses (Stage 5)
+            'student_loan_interest': self.student_loan_interest,
+            'educator_expenses': self.educator_expenses,
+            'ira_contributions': self.ira_contributions,
         }
 
 
@@ -188,11 +197,25 @@ class Household:
     expected_complexity: Optional[str] = None
     multigenerational_subpattern: Optional[str] = None  # For multigenerational households
     
-    # Household-level attributes (Stage 5)
-    property_tax: int = 0
+    # Household-level expenses (Stage 5)
+    property_taxes: int = 0
     mortgage_interest: int = 0
-    state_local_tax: int = 0
+    state_income_tax: int = 0
+    medical_expenses: int = 0
     charitable_contributions: int = 0
+    
+    # Above-the-line deductions (Stage 5) - household totals
+    student_loan_interest: int = 0
+    educator_expenses: int = 0
+    ira_contributions: int = 0
+    
+    # Credit-related expenses (Stage 5)
+    child_care_expenses: int = 0
+    education_expenses: int = 0
+    
+    # Calculated totals (Stage 5)
+    total_itemized_deductions: int = 0
+    total_above_line_deductions: int = 0
     
     # Validation (Stage 7)
     validation_score: Optional[float] = None
@@ -263,8 +286,20 @@ class Household:
             'child_count': self.child_count(),
             'total_household_income': self.total_household_income(),
             'is_married': self.is_married(),
-            'property_tax': self.property_tax,
+            # Expenses (Stage 5)
+            'property_taxes': self.property_taxes,
             'mortgage_interest': self.mortgage_interest,
+            'state_income_tax': self.state_income_tax,
+            'medical_expenses': self.medical_expenses,
+            'charitable_contributions': self.charitable_contributions,
+            'student_loan_interest': self.student_loan_interest,
+            'educator_expenses': self.educator_expenses,
+            'ira_contributions': self.ira_contributions,
+            'child_care_expenses': self.child_care_expenses,
+            'education_expenses': self.education_expenses,
+            'total_itemized_deductions': self.total_itemized_deductions,
+            'total_above_line_deductions': self.total_above_line_deductions,
+            # Validation
             'validation_score': self.validation_score
         }
 

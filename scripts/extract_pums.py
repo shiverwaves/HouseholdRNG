@@ -61,12 +61,7 @@ DISTRIBUTION_TABLES = [
     'adult_child_ages',
     'stepchild_patterns',
     'multigenerational_patterns',
-    'unmarried_partner_patterns',
-    'race_distribution',
-    'race_by_age',
-    'hispanic_origin_by_age',
-    'spousal_age_gaps',
-    'couple_sex_patterns'
+    'unmarried_partner_patterns'
 ]
 
 
@@ -182,13 +177,12 @@ def extract_household_patterns(households: pd.DataFrame, persons: pd.DataFrame,
         unmarried_partner = row.get(33, 0)
         
         # Classify patterns
-        # Check blended family FIRST (has stepchildren)
-        if hht == 1 and step_children > 0:
-            return 'blended_family'
-        elif hht == 1 and noc == 0:
+        if hht == 1 and noc == 0:
             return 'married_couple_no_children'
-        elif hht == 1 and noc > 0:
+        elif hht == 1 and noc > 0 and step_children == 0:
             return 'married_couple_with_children'
+        elif hht == 1 and step_children > 0:
+            return 'blended_family'
         elif hht in [2, 3] and noc > 0:
             return 'single_parent'
         elif grandchildren > 0 or parents > 0:
@@ -372,6 +366,7 @@ def extract_social_security(persons: pd.DataFrame, state_code: str, year: int) -
             'weight': x['PWGTP'].sum(),
             'count': len(x)
         }),
+        include_groups=False
     ).reset_index()
     
     ss_dist['state_code'] = state_code
@@ -402,6 +397,7 @@ def extract_retirement_income(persons: pd.DataFrame, state_code: str, year: int)
             'weight': x['PWGTP'].sum(),
             'count': len(x)
         }),
+        include_groups=False
     ).reset_index()
     
     ret_dist['state_code'] = state_code
@@ -461,6 +457,7 @@ def extract_property_taxes(households: pd.DataFrame, state_code: str, year: int)
             'weight': x['WGTP'].sum(),
             'count': len(x)
         }),
+        include_groups=False
     ).reset_index()
     
     prop_tax_dist['state_code'] = state_code
@@ -495,12 +492,88 @@ def extract_mortgage_interest(households: pd.DataFrame, state_code: str, year: i
             'weight': x['WGTP'].sum(),
             'count': len(x)
         }),
+        include_groups=False
     ).reset_index()
     
     mort_int_dist['state_code'] = state_code
     mort_int_dist['year'] = year
     
     return mort_int_dist[['state_code', 'income_bracket', 'mean_amount', 'median_amount', 'weight', 'year']]
+
+
+def extract_homeownership_rates(households: pd.DataFrame, state_code: str, year: int) -> pd.DataFrame:
+    """
+    Extract homeownership rates by householder age and household income.
+    
+    TEN (Tenure) values:
+    1 = Owned with mortgage or loan
+    2 = Owned free and clear
+    3 = Rented
+    4 = Occupied without payment of rent
+    
+    Returns distribution for realistic homeownership probability sampling.
+    """
+    # Get householder age from persons data would be ideal, but we can use HHLDRAGEP
+    # which is age of householder already in household file
+    hh = households.copy()
+    
+    # Filter to valid tenure values
+    hh = hh[hh['TEN'].isin([1, 2, 3, 4])]
+    
+    # Create tenure categories
+    tenure_map = {
+        1: 'owner_with_mortgage',
+        2: 'owner_free_clear', 
+        3: 'renter',
+        4: 'renter'  # Treat occupied without rent as renter for simplicity
+    }
+    hh['tenure'] = hh['TEN'].map(tenure_map)
+    
+    # Create age brackets using householder age (HHLDRAGEP or derive from persons)
+    # Note: HHLDRAGEP might not exist in all PUMS versions, so we'll create brackets
+    # based on the first adult in each household
+    if 'HHLDRAGEP' in hh.columns:
+        age_col = 'HHLDRAGEP'
+    else:
+        # Fallback - will need to merge with persons for householder age
+        # For now, use a placeholder that will be calculated
+        age_col = None
+    
+    if age_col and age_col in hh.columns:
+        hh['age_bracket'] = pd.cut(
+            hh[age_col],
+            bins=[0, 25, 35, 45, 55, 65, 100],
+            labels=['<25', '25-34', '35-44', '45-54', '55-64', '65+']
+        )
+    else:
+        # If no age column, create a single "all" bracket
+        hh['age_bracket'] = 'all_ages'
+    
+    # Create income brackets
+    hh['income_bracket'] = pd.cut(
+        hh['HINCP'].fillna(0),
+        bins=[-float('inf'), 25000, 50000, 75000, 100000, 150000, float('inf')],
+        labels=['<$25K', '$25-50K', '$50-75K', '$75-100K', '$100-150K', '$150K+']
+    )
+    
+    # Calculate weighted counts by age, income, and tenure
+    grouped = hh.groupby(['age_bracket', 'income_bracket', 'tenure'], observed=True).agg({
+        'WGTP': 'sum'
+    }).reset_index()
+    grouped.columns = ['age_bracket', 'income_bracket', 'tenure', 'weighted_count']
+    
+    # Calculate percentage within each age-income combination
+    totals = grouped.groupby(['age_bracket', 'income_bracket'], observed=True)['weighted_count'].sum().reset_index()
+    totals.columns = ['age_bracket', 'income_bracket', 'total']
+    
+    grouped = grouped.merge(totals, on=['age_bracket', 'income_bracket'])
+    grouped['percentage'] = (grouped['weighted_count'] / grouped['total'] * 100).round(2)
+    
+    # Add metadata
+    grouped['state_code'] = state_code
+    grouped['year'] = year
+    
+    return grouped[['state_code', 'age_bracket', 'income_bracket', 'tenure', 'percentage', 'weighted_count', 'year']]
 
 
 def extract_education_by_age(persons: pd.DataFrame, state_code: str, year: int) -> pd.DataFrame:
@@ -607,6 +680,7 @@ def extract_disability_by_age(persons: pd.DataFrame, state_code: str, year: int)
             'disabled_weighted': (x['has_disability'] * x['PWGTP']).sum(),
             'sample_count': len(x)
         }),
+        include_groups=False
     ).reset_index()
     
     dis_dist['disability_percentage'] = (dis_dist['disabled_weighted'] / dis_dist['total_weighted'] * 100).round(2)
@@ -722,215 +796,6 @@ def extract_public_assistance_income(persons: pd.DataFrame, state_code: str, yea
     return pap_dist[['state_code', 'income_bracket', 'percentage', 'mean_amount', 'median_amount', 'weighted_count', 'year']]
 
 
-def extract_race_distribution(persons: pd.DataFrame, state_code: str, year: int) -> pd.DataFrame:
-    """
-    Extract overall race distribution.
-    
-    Uses RAC1P (Race recode 1):
-    1=White, 2=Black, 3=American Indian, 4=Alaska Native, 
-    5=AI/AN combined, 6=Asian, 7=Native Hawaiian/Pacific Islander,
-    8=Other, 9=Two or more races
-    """
-    persons_copy = persons.copy()
-    
-    race_map = {
-        1: 'white',
-        2: 'black',
-        3: 'american_indian',
-        4: 'alaska_native',
-        5: 'american_indian_alaska_native',
-        6: 'asian',
-        7: 'native_hawaiian_pacific_islander',
-        8: 'other',
-        9: 'two_or_more'
-    }
-    
-    persons_copy['race'] = persons_copy['RAC1P'].map(race_map).fillna('unknown')
-    
-    race_dist = persons_copy.groupby('race', observed=True).agg({
-        'PWGTP': 'sum',
-        'SERIALNO': 'count'
-    }).reset_index()
-    
-    race_dist.columns = ['race', 'weight', 'sample_count']
-    
-    total_weight = race_dist['weight'].sum()
-    race_dist['percentage'] = (race_dist['weight'] / total_weight * 100).round(2)
-    race_dist['state_code'] = state_code.lower()
-    race_dist['year'] = year
-    
-    return race_dist[['state_code', 'race', 'percentage', 'weight', 'year']]
-
-
-def extract_race_by_age(persons: pd.DataFrame, state_code: str, year: int) -> pd.DataFrame:
-    """
-    Extract race distribution by age bracket.
-    Captures generational differences in racial composition.
-    """
-    persons_copy = persons[persons['AGEP'].notna()].copy()
-    
-    persons_copy['age_bracket'] = pd.cut(
-        persons_copy['AGEP'],
-        bins=[-1, 17, 24, 34, 44, 54, 64, 120],
-        labels=['0-17', '18-24', '25-34', '35-44', '45-54', '55-64', '65+']
-    )
-    
-    race_map = {
-        1: 'white', 2: 'black', 3: 'american_indian', 4: 'alaska_native',
-        5: 'american_indian_alaska_native', 6: 'asian',
-        7: 'native_hawaiian_pacific_islander', 8: 'other', 9: 'two_or_more'
-    }
-    persons_copy['race'] = persons_copy['RAC1P'].map(race_map).fillna('unknown')
-    
-    race_age_dist = persons_copy.groupby(['age_bracket', 'race'], observed=True).agg({
-        'PWGTP': 'sum'
-    }).reset_index()
-    
-    race_age_dist.columns = ['age_bracket', 'race', 'weight']
-    
-    totals = race_age_dist.groupby('age_bracket', observed=True)['weight'].transform('sum')
-    race_age_dist['percentage'] = (race_age_dist['weight'] / totals * 100).round(2)
-    race_age_dist['state_code'] = state_code.lower()
-    race_age_dist['year'] = year
-    
-    return race_age_dist[['state_code', 'age_bracket', 'race', 'percentage', 'weight', 'year']]
-
-
-def extract_hispanic_origin_by_age(persons: pd.DataFrame, state_code: str, year: int) -> pd.DataFrame:
-    """
-    Extract Hispanic/Latino origin distribution by age.
-    
-    Uses HISP variable: 01=Not Hispanic, 02-24=Various Hispanic origins
-    """
-    persons_copy = persons[persons['AGEP'].notna()].copy()
-    
-    persons_copy['age_bracket'] = pd.cut(
-        persons_copy['AGEP'],
-        bins=[-1, 17, 24, 34, 44, 54, 64, 120],
-        labels=['0-17', '18-24', '25-34', '35-44', '45-54', '55-64', '65+']
-    )
-    
-    # HISP: 1=not Hispanic, 2+=Hispanic
-    persons_copy['hispanic_origin'] = (persons_copy['HISP'] > 1).map({
-        True: 'hispanic', 
-        False: 'non_hispanic'
-    })
-    
-    hisp_dist = persons_copy.groupby(['age_bracket', 'hispanic_origin'], observed=True).agg({
-        'PWGTP': 'sum'
-    }).reset_index()
-    
-    hisp_dist.columns = ['age_bracket', 'hispanic_origin', 'weight']
-    
-    totals = hisp_dist.groupby('age_bracket', observed=True)['weight'].transform('sum')
-    hisp_dist['percentage'] = (hisp_dist['weight'] / totals * 100).round(2)
-    hisp_dist['state_code'] = state_code.lower()
-    hisp_dist['year'] = year
-    
-    return hisp_dist[['state_code', 'age_bracket', 'hispanic_origin', 'percentage', 'weight', 'year']]
-
-
-def extract_spousal_age_gaps(households: pd.DataFrame, persons: pd.DataFrame, 
-                             state_code: str, year: int) -> pd.DataFrame:
-    """
-    Extract age difference distribution between married couples.
-    
-    Positive gap = householder is older than spouse
-    Negative gap = spouse is older than householder
-    """
-    # Get householders (RELSHIPP = 20)
-    householders = persons[persons['RELSHIPP'] == 20][['SERIALNO', 'AGEP', 'SEX']].copy()
-    householders.columns = ['SERIALNO', 'householder_age', 'householder_sex']
-    
-    # Get spouses (RELSHIPP = 21)
-    spouses = persons[persons['RELSHIPP'] == 21][['SERIALNO', 'AGEP', 'SEX']].copy()
-    spouses.columns = ['SERIALNO', 'spouse_age', 'spouse_sex']
-    
-    # Join to get married couples
-    couples = householders.merge(spouses, on='SERIALNO', how='inner')
-    couples = couples.merge(households[['SERIALNO', 'WGTP']], on='SERIALNO', how='inner')
-    
-    # Calculate age gap (householder - spouse)
-    couples['age_gap'] = couples['householder_age'] - couples['spouse_age']
-    
-    # Create age gap brackets
-    couples['age_gap_bracket'] = pd.cut(
-        couples['age_gap'],
-        bins=[-100, -11, -6, -3, -1, 1, 3, 6, 11, 100],
-        labels=['-11_or_less', '-10_to_-6', '-5_to_-3', '-2_to_-1', 
-                '0', '1_to_2', '3_to_5', '6_to_10', '11_or_more']
-    )
-    
-    gap_dist = couples.groupby('age_gap_bracket', observed=True).agg({
-        'WGTP': 'sum',
-        'SERIALNO': 'count'
-    }).reset_index()
-    
-    gap_dist.columns = ['age_gap_bracket', 'weight', 'sample_count']
-    
-    total_weight = gap_dist['weight'].sum()
-    gap_dist['percentage'] = (gap_dist['weight'] / total_weight * 100).round(2)
-    
-    # Calculate mean gap for reference
-    weighted_mean = np.average(couples['age_gap'], weights=couples['WGTP'])
-    
-    gap_dist['state_code'] = state_code.lower()
-    gap_dist['year'] = year
-    gap_dist['mean_gap'] = round(weighted_mean, 1)
-    
-    return gap_dist[['state_code', 'age_gap_bracket', 'percentage', 'weight', 'mean_gap', 'year']]
-
-
-def extract_couple_sex_patterns(households: pd.DataFrame, persons: pd.DataFrame,
-                                state_code: str, year: int) -> pd.DataFrame:
-    """
-    Extract distribution of couple sex combinations.
-    
-    Patterns: M_F, F_M, M_M, F_F
-    Covers both married (RELSHIPP=21) and unmarried partners (RELSHIPP=33).
-    """
-    # Get householders
-    householders = persons[persons['RELSHIPP'] == 20][['SERIALNO', 'SEX']].copy()
-    householders.columns = ['SERIALNO', 'householder_sex']
-    
-    # Get spouses (RELSHIPP = 21)
-    spouses = persons[persons['RELSHIPP'] == 21][['SERIALNO', 'SEX']].copy()
-    spouses.columns = ['SERIALNO', 'partner_sex']
-    spouses['couple_type'] = 'married'
-    
-    # Get unmarried partners (RELSHIPP = 33)
-    partners = persons[persons['RELSHIPP'] == 33][['SERIALNO', 'SEX']].copy()
-    partners.columns = ['SERIALNO', 'partner_sex']
-    partners['couple_type'] = 'unmarried'
-    
-    # Combine
-    all_partners = pd.concat([spouses, partners], ignore_index=True)
-    couples = householders.merge(all_partners, on='SERIALNO', how='inner')
-    couples = couples.merge(households[['SERIALNO', 'WGTP']], on='SERIALNO', how='inner')
-    
-    # Map sex values
-    sex_map = {1: 'M', 2: 'F'}
-    couples['householder_sex'] = couples['householder_sex'].map(sex_map)
-    couples['partner_sex'] = couples['partner_sex'].map(sex_map)
-    
-    # Create sex pattern
-    couples['sex_pattern'] = couples['householder_sex'] + '_' + couples['partner_sex']
-    
-    pattern_dist = couples.groupby(['couple_type', 'sex_pattern'], observed=True).agg({
-        'WGTP': 'sum',
-        'SERIALNO': 'count'
-    }).reset_index()
-    
-    pattern_dist.columns = ['couple_type', 'sex_pattern', 'weight', 'sample_count']
-    
-    # Percentage within each couple type
-    totals = pattern_dist.groupby('couple_type', observed=True)['weight'].transform('sum')
-    pattern_dist['percentage'] = (pattern_dist['weight'] / totals * 100).round(2)
-    pattern_dist['state_code'] = state_code.lower()
-    pattern_dist['year'] = year
-    
-    return pattern_dist[['state_code', 'couple_type', 'sex_pattern', 'percentage', 'weight', 'year']]
-
 # =============================================================================
 # COMPLEX HOUSEHOLD PATTERN EXTRACTIONS
 # =============================================================================
@@ -1010,6 +875,7 @@ def extract_stepchild_patterns(households: pd.DataFrame, persons: pd.DataFrame,
             'step_children': (x['RELSHIPP'] == 24).sum(),
             'total_children': len(x)
         }),
+        include_groups=False
     ).reset_index()
     
     # Only households with stepchildren
@@ -1081,6 +947,7 @@ def extract_multigenerational_patterns(households: pd.DataFrame, persons: pd.Dat
             'has_parent': (x['RELSHIPP'] == 26).any(),
             'has_grandchild': (x['RELSHIPP'] == 27).any()
         }),
+        include_groups=False
     ).reset_index()
     
     # Determine number of generations
@@ -1169,6 +1036,7 @@ def extract_unmarried_partner_patterns(households: pd.DataFrame, persons: pd.Dat
             'has_step_children': (x['RELSHIPP'] == 24).any(),
             'has_other_adults': (x['RELSHIPP'].isin([25, 30, 34])).any()
         }),
+        include_groups=False
     ).reset_index()
     
     # Merge with household data
@@ -1259,6 +1127,7 @@ def extract_all_distributions(households: pd.DataFrame, persons: pd.DataFrame,
         ('interest_and_dividend_income', lambda: extract_interest_dividend(persons, state_code, year)),
         ('property_taxes', lambda: extract_property_taxes(households, state_code, year)),
         ('mortgage_interest', lambda: extract_mortgage_interest(households, state_code, year)),
+        ('homeownership_rates', lambda: extract_homeownership_rates(households, state_code, year)),
         ('education_by_age', lambda: extract_education_by_age(persons, state_code, year)),
         ('disability_by_age', lambda: extract_disability_by_age(persons, state_code, year)),
         ('other_income_by_employment_status', lambda: extract_other_income_by_employment_status(persons, state_code, year)),
@@ -1267,11 +1136,6 @@ def extract_all_distributions(households: pd.DataFrame, persons: pd.DataFrame,
         ('stepchild_patterns', lambda: extract_stepchild_patterns(households, persons, state_code, year)),
         ('multigenerational_patterns', lambda: extract_multigenerational_patterns(households, persons, state_code, year)),
         ('unmarried_partner_patterns', lambda: extract_unmarried_partner_patterns(households, persons, state_code, year)),
-        ('race_distribution', lambda: extract_race_distribution(persons, state_code, year)),
-        ('race_by_age', lambda: extract_race_by_age(persons, state_code, year)),
-        ('hispanic_origin_by_age', lambda: extract_hispanic_origin_by_age(persons, state_code, year)),
-        ('spousal_age_gaps', lambda: extract_spousal_age_gaps(households, persons, state_code, year)),
-        ('couple_sex_patterns', lambda: extract_couple_sex_patterns(households, persons, state_code, year))
     ]
     
     for table_name, extract_func in extraction_funcs:

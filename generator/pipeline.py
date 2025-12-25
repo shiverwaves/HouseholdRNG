@@ -24,6 +24,7 @@ from .sampler import weighted_sample, set_random_seed
 from .adult_generator import AdultGenerator
 from .child_generator import ChildGenerator
 from .income_generator import IncomeGenerator
+from .expense_generator import ExpenseGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,7 @@ class HouseholdGenerator:
         self.adult_generator = AdultGenerator(self.distributions)
         self.child_generator = ChildGenerator(self.distributions)
         self.income_generator = IncomeGenerator(self.distributions)
+        self.expense_generator = ExpenseGenerator(self.distributions, state)
         
         logger.info(
             f"Initialized generator for {self.state} "
@@ -240,6 +242,37 @@ class HouseholdGenerator:
         return household
     
     # =========================================================================
+    # STAGE 5: Expense Assignment
+    # =========================================================================
+    
+    def generate_stage5(self, household: Household) -> Household:
+        """
+        Stage 5: Assign expenses to household for tax purposes.
+        
+        Assigns expenses based on:
+        - Homeownership status (property taxes, mortgage interest)
+        - Income level (state tax, charitable giving)
+        - Demographics (medical expenses, student loans)
+        - Occupation (educator expenses)
+        
+        Expense categories:
+        - Itemized deductions (SALT, mortgage, medical, charitable)
+        - Above-the-line deductions (student loan interest, IRA, educator)
+        - Credit-related expenses (child care, education)
+        
+        Args:
+            household: Household from Stage 4 with income
+        
+        Returns:
+            Household with expense fields populated
+        """
+        household = self.expense_generator.assign_expenses(household)
+        
+        logger.debug(f"Stage 5: Assigned expenses, itemized=${household.total_itemized_deductions:,}, "
+                    f"above-line=${household.total_above_line_deductions:,}")
+        return household
+    
+    # =========================================================================
     # Full Generation Pipeline
     # =========================================================================
     
@@ -252,8 +285,8 @@ class HouseholdGenerator:
         """
         Generate a complete household through all stages.
         
-        Currently implements Stages 1-4.
-        Stages 5-7 will be added incrementally.
+        Currently implements Stages 1-5.
+        Stages 6-7 will be added incrementally.
         
         Args:
             complexity: Filter by complexity level
@@ -278,7 +311,11 @@ class HouseholdGenerator:
         # Stage 4: Income Assignment
         household = self.generate_stage4(household)
         
-        # TODO: Stage 5: Expense Assignment
+        # Stage 5: Expense Assignment
+        logger.info(f"Calling Stage 5 for household {household.household_id}")
+        household = self.generate_stage5(household)
+        logger.info(f"Stage 5 returned, state_income_tax={household.state_income_tax}")
+        
         # TODO: Stage 6: Tax Calculation
         # TODO: Stage 7: Validation & Scoring
         
